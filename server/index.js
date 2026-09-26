@@ -37,11 +37,12 @@ if (fs.existsSync(clientDistPath)) {
   console.log(`Serving static client files from ${clientDistPath}`);
   app.use(express.static(clientDistPath));
 
-  // SPA fallback for React Router routes
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
-      res.sendFile(path.join(clientDistPath, 'index.html'));
+  // SPA fallback for React Router routes (Express 5 compatible)
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      return res.sendFile(path.join(clientDistPath, 'index.html'));
     }
+    next();
   });
 }
 
