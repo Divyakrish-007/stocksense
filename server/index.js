@@ -8,6 +8,7 @@ const { initDatabase } = require('./db');
 const { router: authRouter } = require('./routes/auth');
 const dashboardRouter = require('./routes/dashboard');
 const productsRouter = require('./routes/products');
+const receiptsRouter = require('./routes/receipts');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -23,6 +24,7 @@ app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/products', productsRouter);
+app.use('/api/receipts', receiptsRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

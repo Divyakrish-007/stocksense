@@ -80,6 +80,32 @@ function initDatabase() {
     );
   `);
 
+  // Create Receipts Table (dedicated module table)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS receipts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference TEXT UNIQUE NOT NULL,
+      vendor TEXT NOT NULL,
+      warehouse_code TEXT NOT NULL,
+      scheduled_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Draft',
+      notes TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Create Receipt Line Items Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS receipt_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+    );
+  `);
+
   seedData();
 }
 
@@ -187,6 +213,46 @@ function seedData() {
   }
 
   console.log('StockSense Database initialization complete.');
+  seedReceipts();
+}
+
+function seedReceipts() {
+  // Only seed if the receipts table exists AND is empty
+  try {
+    const count = db.prepare('SELECT COUNT(*) as c FROM receipts').get().c;
+    if (count > 0) return;
+
+    console.log('Seeding receipts module data...');
+
+    // Grab some products to reference
+    const products = db.prepare('SELECT id, sku FROM products ORDER BY id LIMIT 8').all();
+    if (products.length === 0) return;
+
+    const insertReceipt = db.prepare(`
+      INSERT INTO receipts (reference, vendor, warehouse_code, scheduled_date, status, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const insertItem = db.prepare(`
+      INSERT INTO receipt_items (receipt_id, product_id, quantity) VALUES (?, ?, ?)
+    `);
+
+    const receiptsData = [
+      { ref: 'REC-2026-1001', vendor: 'Apex Micro Semi Corp',   wh: 'WH-MAIN',  date: '2026-09-26', status: 'Ready',   notes: 'Inbound verification pending docking bay 4', items: [{pid: products[0].id, qty: 500}, {pid: products[1].id, qty: 200}] },
+      { ref: 'REC-2026-1002', vendor: 'Global Metalcraft Inc',  wh: 'WH-EAST',  date: '2026-09-27', status: 'Waiting', notes: 'Awaiting bill of lading customs clearance',    items: [{pid: products[2] ? products[2].id : products[0].id, qty: 120}] },
+      { ref: 'REC-2026-1003', vendor: 'PackPro Logistics Ltd',  wh: 'WH-NORTH', date: '2026-09-28', status: 'Draft',   notes: 'PO #4928 generated, vendor scheduling delivery', items: [{pid: products[3] ? products[3].id : products[0].id, qty: 1500}] },
+      { ref: 'REC-2026-1004', vendor: 'Vanguard Fasteners',     wh: 'WH-MAIN',  date: '2026-09-25', status: 'Done',    notes: 'Received, QC inspected and racked in Aisle 3', items: [{pid: products[4] ? products[4].id : products[0].id, qty: 850}] },
+      { ref: 'REC-2026-1005', vendor: 'Nordic Polymers GmbH',   wh: 'WH-COLD',  date: '2026-09-24', status: 'Canceled',notes: 'Cancelled due to supplier price discrepancy',  items: [{pid: products[5] ? products[5].id : products[0].id, qty: 200}] },
+    ];
+
+    for (const r of receiptsData) {
+      const result = insertReceipt.run(r.ref, r.vendor, r.wh, r.date, r.status, r.notes);
+      for (const item of r.items) {
+        insertItem.run(result.lastInsertRowid, item.pid, item.qty);
+      }
+    }
+  } catch (err) {
+    console.error('Receipt seed error (non-fatal):', err.message);
+  }
 }
 
 module.exports = {

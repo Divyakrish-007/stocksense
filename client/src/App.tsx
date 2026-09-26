@@ -13,6 +13,7 @@ import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 // Main Application Pages
 import { DashboardPage } from './pages/DashboardPage';
 import { ProductsPage } from './pages/ProductsPage';
+import { ReceiptsPage } from './pages/ReceiptsPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 
 // Loading Spinner for session initialization
@@ -94,25 +95,9 @@ function AppRoutes() {
       >
         <Route path="/dashboard" element={<DashboardPage />} />
 
-        {/* Modular Phase 2 Feature Placeholders */}
+        {/* Core Inventory Modules */}
         <Route path="/products" element={<ProductsPage />} />
-
-        <Route
-          path="/receipts"
-          element={
-            <PlaceholderPage
-              title="Inbound Receipts & Vendor POs"
-              description="Manage incoming freight shipments, dock staging, and QC inspection"
-              moduleKey="receipts"
-              features={[
-                'Purchase order 3-way matching and discrepancy resolution',
-                'Dock arrival scheduling and barcode receiving scanner interface',
-                'Quality control (QC) quarantine routing and rejection logging',
-                'Automated put-away suggestions based on bin capacity',
-              ]}
-            />
-          }
-        />
+        <Route path="/receipts" element={<ReceiptsPage />} />
 
         <Route
           path="/delivery-orders"

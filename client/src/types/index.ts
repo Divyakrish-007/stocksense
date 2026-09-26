@@ -131,3 +131,61 @@ export interface ProductsMeta {
   };
 }
 
+
+// --- Receipt Module Types ---
+
+export type ReceiptStatus = 'Draft' | 'Waiting' | 'Ready' | 'Done' | 'Canceled';
+
+export interface ReceiptItem {
+  id?: number;
+  product_id: number;
+  quantity: number;
+  sku?: string;
+  product_name?: string;
+  category?: string;
+}
+
+export interface Receipt {
+  id: number;
+  reference: string;
+  vendor: string;
+  warehouse_code: string;
+  warehouse_name?: string;
+  warehouse_location?: string;
+  scheduled_date: string;
+  status: ReceiptStatus;
+  notes?: string;
+  created_at?: string;
+  item_lines: number;
+  total_qty: number;
+  items: ReceiptItem[];
+}
+
+export interface ReceiptFormData {
+  vendor: string;
+  warehouseCode: string;
+  scheduledDate: string;
+  status: ReceiptStatus;
+  notes: string;
+  items: { productId: number; quantity: number }[];
+}
+
+export interface ReceiptFilterState {
+  search: string;
+  status: string;
+  warehouse: string;
+  dateFrom: string;
+  dateTo: string;
+  sortBy: 'id' | 'reference' | 'vendor' | 'scheduled_date' | 'status';
+  order: 'ASC' | 'DESC';
+}
+
+export interface ReceiptsMeta {
+  warehouses: Warehouse[];
+  stats: {
+    total: number;
+    pending: number;
+    done: number;
+    canceled: number;
+  };
+}
