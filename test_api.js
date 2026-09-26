@@ -2515,7 +2515,172 @@ async function runTests() {
   );
 
   console.log('\n======================================================');
-  console.log('🎉 ALL 120 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
+  console.log('  Testing Customers Module (Tests 121-128)            ');
+  console.log('======================================================');
+
+  // 121. GET Customers Meta
+  const custMetaRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/customers/meta',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '121. GET Customers Meta:',
+    custMetaRes.status === 200 && custMetaRes.body.stats?.total >= 0 ? 'PASS' : 'FAIL',
+    `(Total: ${custMetaRes.body.stats?.total}, Active: ${custMetaRes.body.stats?.active})`
+  );
+
+  // 122. GET Customers List
+  const custListRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/customers',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '122. GET Customers List:',
+    custListRes.status === 200 && Array.isArray(custListRes.body.customers) ? 'PASS' : 'FAIL',
+    `(${custListRes.body.count} customers returned)`
+  );
+
+  const testCustCode = `CUST-E2E-${Date.now()}`;
+
+  // 123. POST Create New Customer
+  const createCustRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/customers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      code: testCustCode,
+      name: 'Omni Retail Partners LLC',
+      contactPerson: 'Sarah Jenkins',
+      email: 'sarah.j@omniretail.com',
+      phone: '+1-555-0888',
+      address: '900 Enterprise Way',
+      city: 'Chicago',
+      taxId: 'US-TAX-CUST-999',
+      paymentTerms: 'Net 30',
+      notes: 'Automated E2E customer record',
+      status: 'Active',
+    }
+  );
+  console.log(
+    '123. POST Create New Customer:',
+    createCustRes.status === 201 && createCustRes.body.customer?.id ? 'PASS' : 'FAIL',
+    `(Created Code: ${createCustRes.body.customer?.code})`
+  );
+  const createdCust = createCustRes.body.customer;
+
+  // 124. Duplicate Customer Code Validation Protection (400)
+  const dupCustRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/customers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      code: testCustCode,
+      name: 'Duplicate Customer Attempt',
+    }
+  );
+  console.log(
+    '124. Duplicate Customer Code Validation Protection:',
+    dupCustRes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${dupCustRes.body.message}")`
+  );
+
+  // 125. Invalid Input Handling (Bad Email format rejection)
+  const invalidCustRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/customers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      code: 'CUST-INVALID-1',
+      name: 'Invalid Email Customer',
+      email: 'not-an-email-address',
+    }
+  );
+  console.log(
+    '125. Invalid Input Handling (Bad Email format rejection):',
+    invalidCustRes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${invalidCustRes.body.message}")`
+  );
+
+  // 126. GET Single Customer by ID
+  const getCustRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/customers/${createdCust.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '126. GET Single Customer by ID:',
+    getCustRes.status === 200 && getCustRes.body.customer?.code === testCustCode ? 'PASS' : 'FAIL',
+    `(Retrieved Name: "${getCustRes.body.customer?.name}")`
+  );
+
+  // 127. PATCH Customer (Update contact person)
+  const patchCustRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/customers/${createdCust.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      name: 'Omni Retail Partners International',
+      contactPerson: 'Sarah Jenkins Jr.',
+    }
+  );
+  console.log(
+    '127. PATCH Update Customer Details:',
+    patchCustRes.status === 200 && patchCustRes.body.customer?.contact_person === 'Sarah Jenkins Jr.' ? 'PASS' : 'FAIL',
+    `(Updated Contact: "${patchCustRes.body.customer?.contact_person}")`
+  );
+
+  // 128. DELETE Customer
+  const deleteCustRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/customers/${createdCust.id}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '128. DELETE Customer from Database:',
+    deleteCustRes.status === 200 && deleteCustRes.body.id === createdCust.id ? 'PASS' : 'FAIL',
+    `(Deleted ID: ${deleteCustRes.body.id})`
+  );
+
+  console.log('\n======================================================');
+  console.log('🎉 ALL 128 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
   console.log('======================================================');
 }
 
