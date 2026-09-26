@@ -1,9 +1,9 @@
 import { apiFetch } from './client';
-import type { KpiStats, InventoryActivity, FilterOptions, DashboardFilterState, ActivityStatus } from '../types';
+import type { DashboardOverview, InventoryActivity, FilterOptions, DashboardFilterState, ActivityStatus } from '../types';
 
 export const dashboardApi = {
-  async getStats(): Promise<KpiStats> {
-    return apiFetch<KpiStats>('/api/dashboard/stats');
+  async getOverview(): Promise<DashboardOverview> {
+    return apiFetch<DashboardOverview>('/api/dashboard/overview');
   },
 
   async getActivities(filters?: Partial<DashboardFilterState>): Promise<{ count: number; activities: InventoryActivity[] }> {

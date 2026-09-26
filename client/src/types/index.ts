@@ -27,29 +27,116 @@ export interface InventoryActivity {
   created_at?: string;
 }
 
-export interface KpiStats {
-  totalProductsInStock: {
-    skuCount: number;
-    totalUnits: number;
-    totalValuation: number;
-  };
-  lowStockAlerts: {
-    total: number;
-    lowStock: number;
-    outOfStock: number;
-  };
-  pendingReceipts: {
-    count: number;
-    items: number;
-  };
-  pendingDeliveries: {
-    count: number;
-    items: number;
-  };
-  internalTransfers: {
-    count: number;
-    items: number;
-  };
+export interface ExecutiveKpis {
+  totalInventoryValue: number;
+  totalProducts: number;
+  totalStockUnits: number;
+  lowStockItems: number;
+  outOfStockItems: number;
+  purchaseOrders: number;
+  salesOrders: number;
+  activeSuppliers: number;
+  activeCustomers: number;
+}
+
+export interface InventoryHealthSummary {
+  inStock: number;
+  lowStock: number;
+  outOfStock: number;
+  healthPercentage: number;
+  totalValuation: number;
+}
+
+export interface ProcurementSummary {
+  draftPOs: number;
+  waitingPOs: number;
+  readyPOs: number;
+  completedPOs: number;
+  totalProcurementValue: number;
+  recentPurchaseOrders: {
+    id: number;
+    reference: string;
+    warehouse_code: string;
+    grand_total: number;
+    status: string;
+    order_date: string;
+    supplier_name?: string;
+  }[];
+  topSuppliers: {
+    supplier_name: string;
+    total_value: number;
+    order_count: number;
+  }[];
+}
+
+export interface SalesSummary {
+  draftSOs: number;
+  readySOs: number;
+  completedSOs: number;
+  totalSalesRevenue: number;
+  recentSalesOrders: {
+    id: number;
+    reference: string;
+    customer: string;
+    warehouse_code: string;
+    grand_total: number;
+    status: string;
+    order_date: string;
+  }[];
+  topCustomers: {
+    customer_name: string;
+    total_value: number;
+    order_count: number;
+  }[];
+  topSellingProducts: {
+    id: number;
+    sku: string;
+    name: string;
+    total_qty_sold: number;
+    total_revenue: number;
+  }[];
+}
+
+export interface WarehouseOverviewItem {
+  warehouse_code: string;
+  warehouse_name: string;
+  location: string;
+  capacity: number;
+  total_stock: number;
+  inventory_value: number;
+  product_count: number;
+  inbound_movements: number;
+  outbound_movements: number;
+  utilization: number;
+}
+
+export interface MovementsSummary {
+  receipts: { count: number; totalQuantity: number };
+  deliveries: { count: number; totalQuantity: number };
+  internalTransfers: { count: number; totalQuantity: number };
+  adjustments: { count: number; totalQuantity: number };
+}
+
+export interface LowStockAlertItem {
+  id: number;
+  sku: string;
+  name: string;
+  category: string;
+  quantity: number;
+  min_stock_level: number;
+  warehouse_code: string;
+  severity: 'Critical' | 'High' | 'Medium';
+}
+
+export interface DashboardOverview {
+  kpis: ExecutiveKpis;
+  inventoryHealth: InventoryHealthSummary;
+  procurement: ProcurementSummary;
+  sales: SalesSummary;
+  warehouses: WarehouseOverviewItem[];
+  movements: MovementsSummary;
+  lowStockAlerts: LowStockAlertItem[];
+  recentActivities: InventoryActivity[];
 }
 
 export interface Warehouse {
