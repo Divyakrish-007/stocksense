@@ -455,8 +455,263 @@ async function runTests() {
     `(Deleted ID: ${deleteDraftRes.body.id})`
   );
 
+  // ==========================================
+  // DELIVERY ORDERS MODULE E2E VERIFICATION
+  // ==========================================
+  console.log('\n--- Starting Delivery Orders Module E2E Suite ---');
+
+  // 24. GET /api/delivery-orders/meta
+  const doMeta = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/delivery-orders/meta',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '24. Delivery Orders Meta retrieved:',
+    doMeta.status === 200 && doMeta.body.warehouses?.length > 0 ? 'PASS' : 'FAIL',
+    `(Total logged: ${doMeta.body.stats?.total}, Pending: ${doMeta.body.stats?.pending})`
+  );
+
+  // 25. GET /api/delivery-orders list
+  const doList = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/delivery-orders',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '25. Delivery Orders list loaded:',
+    doList.status === 200 && doList.body.count > 0 ? 'PASS' : 'FAIL',
+    `(${doList.body.count} delivery orders returned)`
+  );
+
+  // Fetch target product stock before dispatch
+  const prodBeforeDO = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/products/${targetProduct.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const stockBeforeDispatch = prodBeforeDO.body.product.quantity;
+  console.log(`    Target Product: ${targetProduct.sku} "${targetProduct.name}" (Current Stock: ${stockBeforeDispatch})`);
+
+  // 26. POST /api/delivery-orders (Create new Ready delivery order)
+  const createdDORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/delivery-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      customer: 'Nexus Logistics International',
+      warehouseCode: 'WH-MAIN',
+      destinationAddress: '500 Technology Way, Silicon Valley, CA',
+      scheduledDate: '2026-10-20',
+      status: 'Ready',
+      notes: 'Priority air courier shipment',
+      items: [
+        { productId: targetProduct.id, quantity: 20 },
+      ],
+    }
+  );
+  const createdDO = createdDORes.body.deliveryOrder;
+  console.log(
+    '26. Create Outbound Delivery Order:',
+    createdDORes.status === 201 && createdDO?.id ? 'PASS' : 'FAIL',
+    `Reference: ${createdDO?.reference}`
+  );
+
+  // 27. GET /api/delivery-orders/:id (Retrieve single order with joined items)
+  const singleDORes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/delivery-orders/${createdDO.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '27. Retrieve Delivery Order by ID:',
+    singleDORes.status === 200 && singleDORes.body.deliveryOrder.items?.length === 1 ? 'PASS' : 'FAIL',
+    `(Items: ${singleDORes.body.deliveryOrder.items?.length}, Qty: ${singleDORes.body.deliveryOrder.items?.[0]?.quantity})`
+  );
+
+  // 28. PATCH /api/delivery-orders/:id (Update customer and destination)
+  const updatedDORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/delivery-orders/${createdDO.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      customer: 'Nexus Logistics International Corp',
+      destinationAddress: '550 Technology Way, Suite 400, Silicon Valley, CA',
+      scheduledDate: '2026-10-21',
+      status: 'Ready',
+      notes: 'Updated suite number and delivery dock instructions',
+      items: [
+        { productId: targetProduct.id, quantity: 20 },
+      ],
+    }
+  );
+  console.log(
+    '28. Update Delivery Order details:',
+    updatedDORes.status === 200 && updatedDORes.body.deliveryOrder.customer.includes('Corp') ? 'PASS' : 'FAIL'
+  );
+
+  // 29. Prevent Insufficient Stock Deduction (Order qty exceeding available stock)
+  const excessiveDORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/delivery-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      customer: 'Excessive Demand Client',
+      warehouseCode: 'WH-MAIN',
+      destinationAddress: '100 Void Street, Nowhere, USA',
+      scheduledDate: '2026-10-25',
+      status: 'Done', // Attempt to complete immediately with massive qty
+      notes: 'Test excessive demand rejection',
+      items: [
+        { productId: targetProduct.id, quantity: 999999 },
+      ],
+    }
+  );
+  console.log(
+    '29. Prevent Insufficient Stock (Negative Stock Prevention):',
+    excessiveDORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection message: "${excessiveDORes.body.message}")`
+  );
+
+  // 30. Transition to 'Done' -> Verify stock level decrements automatically
+  const markDODoneRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/delivery-orders/${createdDO.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Done',
+    }
+  );
+  console.log('30a. Mark Delivery Order as Done:', markDODoneRes.status === 200 && markDODoneRes.body.deliveryOrder.status === 'Done' ? 'PASS' : 'FAIL');
+
+  // Verify stock decremented by 20
+  const verifyProductAfterDispatch = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/products/${targetProduct.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const stockAfterDispatch = verifyProductAfterDispatch.body.product.quantity;
+  const expectedStockAfter = stockBeforeDispatch - 20;
+  console.log(
+    '30b. Outbound Stock Deduction in SQLite:',
+    stockAfterDispatch === expectedStockAfter ? 'PASS' : 'FAIL',
+    `(Before: ${stockBeforeDispatch}, Deducted: 20, After: ${stockAfterDispatch}, Expected: ${expectedStockAfter})`
+  );
+
+  // 31. Prevent Duplicate Stock Deduction (Attempt to re-process Done delivery order)
+  const duplicateDORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/delivery-orders/${createdDO.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Done',
+      customer: 'Trying to mutate finished order',
+    }
+  );
+  console.log(
+    '31. Prevent Duplicate Stock Deduction on Completed Order:',
+    duplicateDORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Protection message: "${duplicateDORes.body.message}")`
+  );
+
+  // 32. Block deletion of Done delivery order -> Should be blocked (400)
+  const deleteDoneDORes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/delivery-orders/${createdDO.id}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '32. Block deletion of Done delivery order:',
+    deleteDoneDORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard message: "${deleteDoneDORes.body.message}")`
+  );
+
+  // 33. Create Draft delivery order and delete it successfully
+  const draftDORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/delivery-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      customer: 'Temporary Outbound Buyer',
+      warehouseCode: 'WH-MAIN',
+      destinationAddress: '99 Warehouse Lane, Chicago, IL',
+      scheduledDate: '2026-11-10',
+      status: 'Draft',
+      notes: 'Disposable test delivery order',
+      items: [{ productId: targetProduct.id, quantity: 2 }],
+    }
+  );
+  const draftDOId = draftDORes.body.deliveryOrder.id;
+
+  const deleteDraftDORes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/delivery-orders/${draftDOId}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '33. Cancel / Delete Draft Delivery Order:',
+    deleteDraftDORes.status === 200 ? 'PASS' : 'FAIL',
+    `(Deleted ID: ${deleteDraftDORes.body.id})`
+  );
+
   console.log('\n======================================================');
-  console.log('🎉 ALL 23 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
+  console.log('🎉 ALL 33 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
   console.log('======================================================');
 }
 

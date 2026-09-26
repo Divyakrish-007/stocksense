@@ -14,6 +14,7 @@ import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { ReceiptsPage } from './pages/ReceiptsPage';
+import { DeliveryOrdersPage } from './pages/DeliveryOrdersPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 
 // Loading Spinner for session initialization
@@ -98,23 +99,7 @@ function AppRoutes() {
         {/* Core Inventory Modules */}
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/receipts" element={<ReceiptsPage />} />
-
-        <Route
-          path="/delivery-orders"
-          element={
-            <PlaceholderPage
-              title="Delivery Orders & Outbound Dispatch"
-              description="Order picking, packing slips, staging lanes, and courier handover"
-              moduleKey="delivery-orders"
-              features={[
-                'Wave picking and batch picking routes for warehouse staff',
-                'Packing station verification and automated shipping label generation',
-                'Carrier API integrations (FedEx, UPS, Freight LTL tracking)',
-                'Customer delivery proof & bill of lading generation',
-              ]}
-            />
-          }
-        />
+        <Route path="/delivery-orders" element={<DeliveryOrdersPage />} />
 
         <Route
           path="/internal-transfers"

@@ -9,6 +9,7 @@ const { router: authRouter } = require('./routes/auth');
 const dashboardRouter = require('./routes/dashboard');
 const productsRouter = require('./routes/products');
 const receiptsRouter = require('./routes/receipts');
+const deliveryOrdersRouter = require('./routes/deliveryOrders');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,6 +26,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/receipts', receiptsRouter);
+app.use('/api/delivery-orders', deliveryOrdersRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

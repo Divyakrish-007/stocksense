@@ -106,6 +106,33 @@ function initDatabase() {
     );
   `);
 
+  // Create Delivery Orders Table (dedicated module table)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS delivery_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference TEXT UNIQUE NOT NULL,
+      customer TEXT NOT NULL,
+      warehouse_code TEXT NOT NULL,
+      destination_address TEXT NOT NULL,
+      scheduled_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Draft',
+      notes TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Create Delivery Order Line Items Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS delivery_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      delivery_order_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (delivery_order_id) REFERENCES delivery_orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+    );
+  `);
+
   seedData();
 }
 
@@ -214,6 +241,7 @@ function seedData() {
 
   console.log('StockSense Database initialization complete.');
   seedReceipts();
+  seedDeliveryOrders();
 }
 
 function seedReceipts() {
@@ -252,6 +280,89 @@ function seedReceipts() {
     }
   } catch (err) {
     console.error('Receipt seed error (non-fatal):', err.message);
+  }
+}
+
+function seedDeliveryOrders() {
+  // Only seed if delivery_orders table exists AND is empty
+  try {
+    const count = db.prepare('SELECT COUNT(*) as c FROM delivery_orders').get().c;
+    if (count > 0) return;
+
+    console.log('Seeding delivery orders module data...');
+
+    const products = db.prepare('SELECT id, sku FROM products ORDER BY id LIMIT 8').all();
+    if (products.length === 0) return;
+
+    const insertDO = db.prepare(`
+      INSERT INTO delivery_orders (reference, customer, warehouse_code, destination_address, scheduled_date, status, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertItem = db.prepare(`
+      INSERT INTO delivery_order_items (delivery_order_id, product_id, quantity) VALUES (?, ?, ?)
+    `);
+
+    const deliveryData = [
+      {
+        ref: 'DO-2026-2001',
+        customer: 'Omni Retail Group',
+        wh: 'WH-MAIN',
+        destination: '742 Evergreen Blvd, Chicago, IL',
+        date: '2026-09-27',
+        status: 'Ready',
+        notes: 'Priority dispatch staging at Lane 2 for morning courier pickup',
+        items: [{ pid: products[0].id, qty: 20 }, { pid: products[1].id, qty: 15 }],
+      },
+      {
+        ref: 'DO-2026-2002',
+        customer: 'Pacific Industrial Supply',
+        wh: 'WH-EAST',
+        destination: '1200 Harbor Way, Newark, NJ',
+        date: '2026-09-28',
+        status: 'Waiting',
+        notes: 'Awaiting customer freight carrier dispatch confirmation',
+        items: [{ pid: products[2] ? products[2].id : products[0].id, qty: 10 }],
+      },
+      {
+        ref: 'DO-2026-2003',
+        customer: 'Apex Automotive Systems',
+        wh: 'WH-NORTH',
+        destination: '450 Woodward Ave, Detroit, MI',
+        date: '2026-09-29',
+        status: 'Draft',
+        notes: 'Quote approved, final packing slip pending warehouse review',
+        items: [{ pid: products[3] ? products[3].id : products[0].id, qty: 25 }],
+      },
+      {
+        ref: 'DO-2026-2004',
+        customer: 'Metro Regional Hospital',
+        wh: 'WH-MAIN',
+        destination: '890 Healthcare Dr, Milwaukee, WI',
+        date: '2026-09-25',
+        status: 'Done',
+        notes: 'Outbound courier delivery signed and completed successfully',
+        items: [{ pid: products[4] ? products[4].id : products[0].id, qty: 30 }],
+      },
+      {
+        ref: 'DO-2026-2005',
+        customer: 'Horizon Construction Co',
+        wh: 'WH-COLD',
+        destination: '300 State St, Madison, WI',
+        date: '2026-09-24',
+        status: 'Canceled',
+        notes: 'Order canceled by customer prior to pallet picking',
+        items: [{ pid: products[5] ? products[5].id : products[0].id, qty: 5 }],
+      },
+    ];
+
+    for (const d of deliveryData) {
+      const result = insertDO.run(d.ref, d.customer, d.wh, d.destination, d.date, d.status, d.notes);
+      for (const item of d.items) {
+        insertItem.run(result.lastInsertRowid, item.pid, item.qty);
+      }
+    }
+  } catch (err) {
+    console.error('Delivery orders seed error (non-fatal):', err.message);
   }
 }
 

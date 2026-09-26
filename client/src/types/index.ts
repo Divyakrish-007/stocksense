@@ -189,3 +189,65 @@ export interface ReceiptsMeta {
     canceled: number;
   };
 }
+// --- Delivery Orders Module Types ---
+
+export type DeliveryOrderStatus = 'Draft' | 'Waiting' | 'Ready' | 'Done' | 'Canceled';
+
+export interface DeliveryOrderItem {
+  id?: number;
+  delivery_order_id?: number;
+  product_id: number;
+  quantity: number;
+  sku?: string;
+  product_name?: string;
+  category?: string;
+  available_stock?: number;
+  unit_price?: number;
+}
+
+export interface DeliveryOrder {
+  id: number;
+  reference: string;
+  customer: string;
+  warehouse_code: string;
+  warehouse_name?: string;
+  warehouse_location?: string;
+  destination_address: string;
+  scheduled_date: string;
+  status: DeliveryOrderStatus;
+  notes?: string;
+  created_at?: string;
+  item_lines: number;
+  total_qty: number;
+  items: DeliveryOrderItem[];
+}
+
+export interface DeliveryOrderFormData {
+  customer: string;
+  warehouseCode: string;
+  destinationAddress: string;
+  scheduledDate: string;
+  status: DeliveryOrderStatus;
+  notes: string;
+  items: { productId: number; quantity: number }[];
+}
+
+export interface DeliveryOrderFilterState {
+  search: string;
+  status: string;
+  warehouse: string;
+  dateFrom: string;
+  dateTo: string;
+  sortBy: 'id' | 'reference' | 'customer' | 'scheduled_date' | 'status';
+  order: 'ASC' | 'DESC';
+}
+
+export interface DeliveryOrdersMeta {
+  warehouses: Warehouse[];
+  stats: {
+    total: number;
+    pending: number;
+    done: number;
+    canceled: number;
+  };
+}
