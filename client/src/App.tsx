@@ -19,6 +19,7 @@ import { InternalTransfersPage } from './pages/InternalTransfersPage';
 import { InventoryAdjustmentsPage } from './pages/InventoryAdjustmentsPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { PurchaseOrdersPage } from './pages/PurchaseOrdersPage';
+import { SalesOrdersPage } from './pages/SalesOrdersPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 
 // Loading Spinner for session initialization
@@ -109,6 +110,7 @@ function AppRoutes() {
         <Route path="/inventory-adjustments" element={<InventoryAdjustmentsPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
+        <Route path="/sales-orders" element={<SalesOrdersPage />} />
 
         <Route
           path="/move-history"

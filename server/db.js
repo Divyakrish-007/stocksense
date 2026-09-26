@@ -322,6 +322,46 @@ function initDatabase() {
     );
   `);
 
+  // Create Sales Orders Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference TEXT UNIQUE NOT NULL,
+      customer TEXT NOT NULL,
+      warehouse_code TEXT NOT NULL,
+      order_date DATE NOT NULL,
+      expected_date DATE,
+      shipping_address TEXT,
+      payment_terms TEXT,
+      notes TEXT,
+      subtotal REAL DEFAULT 0,
+      tax_total REAL DEFAULT 0,
+      discount_total REAL DEFAULT 0,
+      grand_total REAL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'Draft',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (warehouse_code) REFERENCES warehouses(code) ON DELETE RESTRICT
+    );
+  `);
+
+  // Create Sales Order Items Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sales_order_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL,
+      unit_price REAL DEFAULT 0,
+      tax_rate REAL DEFAULT 0,
+      discount REAL DEFAULT 0,
+      line_total REAL DEFAULT 0,
+      quantity_shipped INTEGER DEFAULT 0,
+      FOREIGN KEY (sales_order_id) REFERENCES sales_orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+    );
+  `);
+
   seedData();
 }
 
@@ -436,6 +476,7 @@ function seedData() {
   seedInventoryAdjustments();
   seedSuppliers();
   seedPurchaseOrders();
+  seedSalesOrders();
 }
 
 function seedReceipts() {
@@ -900,6 +941,108 @@ function seedPurchaseOrders() {
     console.error('Purchase orders seed error (non-fatal):', err.message);
   }
 }
+
+function seedSalesOrders() {
+  try {
+    const count = db.prepare('SELECT COUNT(*) as c FROM sales_orders').get().c;
+    if (count > 0) return;
+
+    console.log('Seeding sales orders module data...');
+
+    const products = db.prepare('SELECT id, sku, unit_price FROM products ORDER BY id').all();
+    if (products.length === 0) return;
+
+    const insertSO = db.prepare(`
+      INSERT INTO sales_orders (reference, customer, warehouse_code, order_date, expected_date, shipping_address, payment_terms, notes, subtotal, tax_total, discount_total, grand_total, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertItem = db.prepare(`
+      INSERT INTO sales_order_items (sales_order_id, product_id, quantity, unit_price, tax_rate, discount, line_total, quantity_shipped)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const sos = [
+      {
+        ref: 'SO-2026-1001', customer: 'OmniTech Enterprise Systems', wh: 'WH-MAIN',
+        orderDate: '2026-09-20', expectedDate: '2026-09-28',
+        shippingAddress: '100 Technology Way, Suite 300, Chicago, IL', payTerms: 'Net 30',
+        notes: 'Priority customer order for regional deployment', status: 'Ready',
+        items: [
+          { pid: products[0].id, qty: 15, price: 14.50, tax: 8, disc: 0, qtyShipped: 0 },
+          { pid: products[1] ? products[1].id : products[0].id, qty: 5, price: 28.00, tax: 8, disc: 5, qtyShipped: 0 },
+        ],
+      },
+      {
+        ref: 'SO-2026-1002', customer: 'Metro Industrial Supply', wh: 'WH-EAST',
+        orderDate: '2026-09-22', expectedDate: '2026-09-30',
+        shippingAddress: '450 Industrial Parkway, Newark, NJ', payTerms: 'Net 45',
+        notes: 'Bulk raw materials purchase', status: 'Waiting',
+        items: [
+          { pid: products[3] ? products[3].id : products[0].id, qty: 20, price: 22.00, tax: 10, disc: 0, qtyShipped: 0 },
+        ],
+      },
+      {
+        ref: 'SO-2026-1003', customer: 'Summit Automations Inc', wh: 'WH-NORTH',
+        orderDate: '2026-09-24', expectedDate: '2026-10-02',
+        shippingAddress: '88 Cybernetics Blvd, Detroit, MI', payTerms: 'Net 30',
+        notes: 'New client sample order', status: 'Draft',
+        items: [
+          { pid: products[6] ? products[6].id : products[0].id, qty: 50, price: 2.10, tax: 5, disc: 0, qtyShipped: 0 },
+        ],
+      },
+      {
+        ref: 'SO-2026-1004', customer: 'Pinnacle Aerospace', wh: 'WH-MAIN',
+        orderDate: '2026-09-15', expectedDate: '2026-09-22',
+        shippingAddress: '1200 Flight Way, Chicago, IL', payTerms: 'Net 30',
+        notes: 'Order fulfilled and shipped via express logistics', status: 'Done',
+        items: [
+          { pid: products[0].id, qty: 10, price: 14.50, tax: 8, disc: 0, qtyShipped: 10 },
+        ],
+      },
+      {
+        ref: 'SO-2026-1005', customer: 'Pacific Dynamics Ltd', wh: 'WH-COLD',
+        orderDate: '2026-09-18', expectedDate: '2026-09-25',
+        shippingAddress: '55 Ocean Ave, Milwaukee, WI', payTerms: 'Immediate',
+        notes: 'Cancelled due to specification changes', status: 'Canceled',
+        items: [
+          { pid: products[14] ? products[14].id : products[0].id, qty: 8, price: 7.80, tax: 0, disc: 0, qtyShipped: 0 },
+        ],
+      },
+    ];
+
+    for (const so of sos) {
+      let subtotal = 0, taxTotal = 0, discTotal = 0;
+      for (const it of so.items) {
+        const lineBase = it.qty * it.price;
+        const lineDisc = lineBase * (it.disc / 100);
+        const lineTax  = (lineBase - lineDisc) * (it.tax / 100);
+        subtotal  += lineBase;
+        discTotal += lineDisc;
+        taxTotal  += lineTax;
+      }
+      const grandTotal = subtotal - discTotal + taxTotal;
+
+      const res = insertSO.run(
+        so.ref, so.customer, so.wh,
+        so.orderDate, so.expectedDate, so.shippingAddress, so.payTerms,
+        so.notes,
+        subtotal.toFixed(2), taxTotal.toFixed(2), discTotal.toFixed(2), grandTotal.toFixed(2),
+        so.status
+      );
+
+      for (const it of so.items) {
+        const lineBase = it.qty * it.price;
+        const lineDisc = lineBase * (it.disc / 100);
+        const lineTax  = (lineBase - lineDisc) * (it.tax / 100);
+        const lineTotal = lineBase - lineDisc + lineTax;
+        insertItem.run(res.lastInsertRowid, it.pid, it.qty, it.price, it.tax, it.disc, lineTotal.toFixed(2), it.qtyShipped);
+      }
+    }
+  } catch (err) {
+    console.error('Sales orders seed error (non-fatal):', err.message);
+  }
+}
+
 
 
 function getWarehouseStock(productId, warehouseCode) {

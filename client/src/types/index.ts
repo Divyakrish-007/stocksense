@@ -549,3 +549,102 @@ export interface ReceiveItem {
   poItemId: number;
   quantityReceived: number;
 }
+
+// --- Sales Orders Module Types ---
+
+export type SalesOrderStatus = 'Draft' | 'Waiting' | 'Ready' | 'Done' | 'Canceled';
+
+export interface SalesOrderItem {
+  id?: number;
+  sales_order_id?: number;
+  product_id: number;
+  quantity: number;
+  unit_price: number;
+  tax_rate: number;
+  discount: number;
+  line_total: number;
+  quantity_shipped: number;
+  sku?: string;
+  product_name?: string;
+  category?: string;
+  available_stock?: number;
+  current_stock?: number;
+}
+
+export interface SalesOrder {
+  id: number;
+  reference: string;
+  customer: string;
+  warehouse_code: string;
+  warehouse_name?: string;
+  warehouse_location?: string;
+  order_date: string;
+  expected_date?: string;
+  shipping_address?: string;
+  payment_terms?: string;
+  notes?: string;
+  subtotal: number;
+  tax_total: number;
+  discount_total: number;
+  grand_total: number;
+  status: SalesOrderStatus;
+  item_lines?: number;
+  total_qty?: number;
+  total_shipped?: number;
+  created_at?: string;
+  updated_at?: string;
+  items: SalesOrderItem[];
+}
+
+export interface SalesOrderFormData {
+  customer: string;
+  warehouseCode: string;
+  orderDate: string;
+  expectedDate?: string;
+  shippingAddress?: string;
+  paymentTerms?: string;
+  notes?: string;
+  status: SalesOrderStatus;
+  items: {
+    productId: number;
+    quantity: number;
+    unitPrice: number;
+    taxRate: number;
+    discount: number;
+  }[];
+}
+
+export interface SalesOrderFilterState {
+  search: string;
+  status: string;
+  warehouse: string;
+  dateFrom: string;
+  dateTo: string;
+  sortBy: 'id' | 'reference' | 'customer' | 'order_date' | 'expected_date' | 'grand_total' | 'status';
+  order: 'ASC' | 'DESC';
+}
+
+export interface SalesOrdersMeta {
+  total: number;
+  draft: number;
+  waiting: number;
+  ready: number;
+  done: number;
+  canceled: number;
+  totalValuation: number;
+  warehouses: Warehouse[];
+  products: Product[];
+  customers?: string[];
+  customerNames?: string[];
+  stats: {
+    total: number;
+    draft: number;
+    waiting: number;
+    ready: number;
+    done: number;
+    canceled: number;
+    totalValuation: number;
+    total_value?: number;
+  };
+}
+

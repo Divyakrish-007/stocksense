@@ -16,6 +16,7 @@ import { Package,
   X,
   ShieldCheck,
   Warehouse,
+  ShoppingBag,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -43,6 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { label: 'Inventory Adjustments', path: '/inventory-adjustments', icon: SlidersHorizontal },
     { label: 'Suppliers', path: '/suppliers', icon: Package },
     { label: 'Purchase Orders', path: '/purchase-orders', icon: Package },
+    { label: 'Sales Orders', path: '/sales-orders', icon: ShoppingBag },
     { label: 'Move History', path: '/move-history', icon: History },
     { label: 'Settings', path: '/settings', icon: Settings },
     { label: 'My Profile', path: '/profile', icon: UserCheck },
