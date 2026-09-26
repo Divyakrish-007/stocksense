@@ -20,6 +20,7 @@ import { InventoryAdjustmentsPage } from './pages/InventoryAdjustmentsPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { PurchaseOrdersPage } from './pages/PurchaseOrdersPage';
 import { SalesOrdersPage } from './pages/SalesOrdersPage';
+import { CustomersPage } from './pages/CustomersPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 
@@ -112,6 +113,7 @@ function AppRoutes() {
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
         <Route path="/sales-orders" element={<SalesOrdersPage />} />
+        <Route path="/customers" element={<CustomersPage />} />
         <Route path="/reports" element={<ReportsPage />} />
 
         <Route

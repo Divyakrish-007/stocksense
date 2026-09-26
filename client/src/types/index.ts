@@ -441,6 +441,62 @@ export interface SuppliersMeta {
   paymentTerms: string[];
 }
 
+// --- Customers Module Types ---
+
+export type CustomerStatus = 'Active' | 'Inactive';
+
+export interface Customer {
+  id: number;
+  code: string;
+  name: string;
+  contact_person: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  tax_id: string;
+  payment_terms: string;
+  notes?: string;
+  status: CustomerStatus;
+  total_orders: number;
+  total_value: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CustomerFormData {
+  code: string;
+  name: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  taxId: string;
+  paymentTerms: string;
+  notes: string;
+  status: CustomerStatus;
+}
+
+export interface CustomerFilterState {
+  search: string;
+  status: string;
+  city: string;
+  sortBy: 'id' | 'code' | 'name' | 'total_orders' | 'total_value';
+  order: 'ASC' | 'DESC';
+}
+
+export interface CustomersMeta {
+  stats: {
+    total: number;
+    active: number;
+    inactive: number;
+    totalOrders: number;
+  };
+  cities: string[];
+  paymentTerms: string[];
+}
+
 // --- Purchase Orders Module Types ---
 
 export type PurchaseOrderStatus =

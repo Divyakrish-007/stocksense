@@ -221,6 +221,49 @@ function initDatabase() {
     );
   `);
 
+  // Create Customers Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      contact_person TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      tax_id TEXT NOT NULL DEFAULT '',
+      payment_terms TEXT NOT NULL DEFAULT 'Net 30',
+      notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Inactive')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Seed Customers if empty
+  try {
+    const customerCount = db.prepare('SELECT COUNT(*) AS count FROM customers').get().count;
+    if (customerCount === 0) {
+      const insertCust = db.prepare(`
+        INSERT INTO customers (code, name, contact_person, email, phone, address, city, tax_id, payment_terms, notes, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const initialCustomers = [
+        ['CUST-001', 'Acme Logistics Corp', 'Sarah Connor', 'sarah.c@acmelogistics.com', '+1-555-0192', '100 Industrial Pkwy', 'Chicago', 'US-TAX-101', 'Net 30', 'Key enterprise customer', 'Active'],
+        ['CUST-002', 'Global Tech Solutions', 'Michael Scott', 'm.scott@globaltech.io', '+1-555-0144', '200 Innovation Way', 'New York', 'US-TAX-102', 'Net 15', 'High volume electronics purchaser', 'Active'],
+        ['CUST-003', 'Apex Manufacturing Inc', 'Jim Halpert', 'j.halpert@apexmfg.com', '+1-555-0188', '450 Factory Rd', 'Detroit', 'US-TAX-103', 'Net 30', 'Standard tier customer', 'Active'],
+        ['CUST-004', 'Pinnacle Distribution', 'Pam Beesly', 'pam@pinnacledist.com', '+1-555-0177', '789 Commercial Blvd', 'Dallas', 'US-TAX-104', 'Net 60', 'Preferred partner', 'Active'],
+        ['CUST-005', 'Pacific Dynamics Ltd', 'Dwight Schrute', 'dwight@pacificdyn.com', '+1-555-0133', '55 Ocean Ave', 'Milwaukee', 'US-TAX-105', 'Immediate', 'Specialty orders', 'Active'],
+      ];
+      for (const c of initialCustomers) {
+        insertCust.run(...c);
+      }
+    }
+  } catch (err) {
+    console.error('Customer seed notice:', err.message);
+  }
+
   // Create Purchase Orders Table
   db.exec(`
     CREATE TABLE IF NOT EXISTS purchase_orders (

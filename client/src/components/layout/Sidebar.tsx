@@ -17,6 +17,8 @@ import { Package,
   ShieldCheck,
   Warehouse,
   ShoppingBag,
+  ShoppingCart,
+  Users,
   BarChart3,
 } from 'lucide-react';
 
@@ -44,8 +46,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { label: 'Internal Transfers', path: '/internal-transfers', icon: ArrowLeftRight },
     { label: 'Inventory Adjustments', path: '/inventory-adjustments', icon: SlidersHorizontal },
     { label: 'Suppliers', path: '/suppliers', icon: Package },
-    { label: 'Purchase Orders', path: '/purchase-orders', icon: Package },
+    { label: 'Purchase Orders', path: '/purchase-orders', icon: ShoppingCart },
     { label: 'Sales Orders', path: '/sales-orders', icon: ShoppingBag },
+    { label: 'Customers', path: '/customers', icon: Users },
     { label: 'Reports', path: '/reports', icon: BarChart3 },
     { label: 'Move History', path: '/move-history', icon: History },
     { label: 'Settings', path: '/settings', icon: Settings },
@@ -103,7 +106,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isDashboard = item.path === '/dashboard';
 
             return (
               <NavLink
@@ -128,11 +130,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                       }`}
                     />
                     <span className="truncate">{item.label}</span>
-                    {!isDashboard && (
-                      <span className="ml-auto text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700 font-mono">
-                        Phase 2
-                      </span>
-                    )}
                   </>
                 )}
               </NavLink>
