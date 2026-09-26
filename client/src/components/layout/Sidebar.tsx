@@ -17,6 +17,7 @@ import { Package,
   ShieldCheck,
   Warehouse,
   ShoppingBag,
+  BarChart3,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -45,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { label: 'Suppliers', path: '/suppliers', icon: Package },
     { label: 'Purchase Orders', path: '/purchase-orders', icon: Package },
     { label: 'Sales Orders', path: '/sales-orders', icon: ShoppingBag },
+    { label: 'Reports', path: '/reports', icon: BarChart3 },
     { label: 'Move History', path: '/move-history', icon: History },
     { label: 'Settings', path: '/settings', icon: Settings },
     { label: 'My Profile', path: '/profile', icon: UserCheck },

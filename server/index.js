@@ -15,6 +15,7 @@ const inventoryAdjustmentsRouter = require('./routes/inventoryAdjustments');
 const suppliersRouter = require('./routes/suppliers');
 const purchaseOrdersRouter = require('./routes/purchaseOrders');
 const salesOrdersRouter = require('./routes/salesOrders');
+const reportsRouter = require('./routes/reports');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -37,6 +38,7 @@ app.use('/api/inventory-adjustments', inventoryAdjustmentsRouter);
 app.use('/api/suppliers', suppliersRouter);
 app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/sales-orders', salesOrdersRouter);
+app.use('/api/reports', reportsRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

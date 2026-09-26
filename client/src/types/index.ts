@@ -648,3 +648,104 @@ export interface SalesOrdersMeta {
   };
 }
 
+// --- Reports & Analytics Module Types ---
+
+export interface ReportOverview {
+  totalProducts: number;
+  totalInventoryQuantity: number;
+  totalInventoryValue: number;
+  lowStockProducts: number;
+  outOfStockProducts: number;
+  totalSuppliers: number;
+  totalCustomers: number;
+  totalPurchaseOrders: number;
+  totalSalesOrders: number;
+  totalReceipts: number;
+  totalDeliveries: number;
+  totalInternalTransfers: number;
+  totalAdjustments: number;
+}
+
+export interface InventoryReport {
+  totalStockQuantity: number;
+  inventoryValue: number;
+  inStockCount: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+  stockByWarehouse: { warehouse_code: string; warehouse_name: string; total_stock: number }[];
+  stockByCategory: { category: string; total_stock: number; product_count: number }[];
+  topStockedProducts: Product[];
+  lowStockProducts: (Product & { min_stock_level: number })[];
+  outOfStockProducts: (Product & { min_stock_level: number })[];
+}
+
+export interface PurchaseReport {
+  purchaseOrderCount: number;
+  completedPurchaseOrders: number;
+  pendingPurchaseOrders: number;
+  purchaseValue: number;
+  purchaseByMonth: { month: string; value: number; order_count: number }[];
+  purchaseBySupplier: { supplier_name: string; total_value: number; order_count: number }[];
+  topSuppliers: { supplier_name: string; total_value: number; order_count: number }[];
+  recentPurchaseOrders: {
+    id: number; reference: string; order_date: string; expected_date: string;
+    grand_total: number; status: string; warehouse_code: string; supplier_name: string;
+  }[];
+}
+
+export interface SalesReport {
+  salesOrderCount: number;
+  completedSalesOrders: number;
+  pendingSalesOrders: number;
+  totalSalesValue: number;
+  salesByMonth: { month: string; value: number; order_count: number }[];
+  salesByCustomer: { customer_name: string; total_value: number; order_count: number }[];
+  topCustomers: { customer_name: string; total_value: number; order_count: number }[];
+  recentSalesOrders: {
+    id: number; reference: string; customer: string; order_date: string;
+    expected_date: string; grand_total: number; status: string; warehouse_code: string;
+  }[];
+}
+
+export interface MovementReport {
+  receipts: { count: number; totalQuantity: number };
+  deliveries: { count: number; totalQuantity: number };
+  internalTransfers: { count: number; totalQuantity: number };
+  adjustments: { count: number; increaseQuantity: number; decreaseQuantity: number };
+  totalInboundQuantity: number;
+  totalOutboundQuantity: number;
+  netInventoryMovement: number;
+  movementTrends: {
+    month: string; receipts: number; deliveries: number;
+    transfers: number; adjustments: number;
+  }[];
+}
+
+export interface WarehouseReportItem {
+  warehouse_code: string;
+  warehouse_name: string;
+  location: string;
+  capacity: number;
+  total_stock: number;
+  inventory_value: number;
+  product_count: number;
+  total_inbound: number;
+  total_outbound: number;
+  utilization: number;
+}
+
+export interface WarehouseReport {
+  warehouseStock: { warehouse_code: string; warehouse_name: string; location: string; capacity: number; total_stock: number; inventory_value: number; product_count: number }[];
+  warehouseInbound: { warehouse_code: string; total_inbound: number }[];
+  warehouseOutbound: { warehouse_code: string; total_outbound: number }[];
+  warehouseActivitySummary: WarehouseReportItem[];
+}
+
+export type ReportTab = 'overview' | 'inventory' | 'purchases' | 'sales' | 'movements' | 'warehouses';
+
+export interface ReportFilterState {
+  dateFrom: string;
+  dateTo: string;
+  warehouse: string;
+  activeTab: ReportTab;
+}
