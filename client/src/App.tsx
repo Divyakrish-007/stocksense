@@ -12,6 +12,7 @@ import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 
 // Main Application Pages
 import { DashboardPage } from './pages/DashboardPage';
+import { ProductsPage } from './pages/ProductsPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 
 // Loading Spinner for session initialization
@@ -94,22 +95,7 @@ function AppRoutes() {
         <Route path="/dashboard" element={<DashboardPage />} />
 
         {/* Modular Phase 2 Feature Placeholders */}
-        <Route
-          path="/products"
-          element={
-            <PlaceholderPage
-              title="Products & Master Catalog"
-              description="Central catalog of SKUs, categories, reorder thresholds, and bin locations"
-              moduleKey="products"
-              features={[
-                'Multi-warehouse SKU inventory levels & safety stock rules',
-                'Batch lot numbers, serial tracking, and shelf-life expiration dates',
-                'Automated barcode printing and QR code labeling',
-                'Product variant matrix (size, color, packaging specs)',
-              ]}
-            />
-          }
-        />
+        <Route path="/products" element={<ProductsPage />} />
 
         <Route
           path="/receipts"

@@ -7,6 +7,7 @@ require('dotenv').config();
 const { initDatabase } = require('./db');
 const { router: authRouter } = require('./routes/auth');
 const dashboardRouter = require('./routes/dashboard');
+const productsRouter = require('./routes/products');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,6 +22,7 @@ app.use(express.json());
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/products', productsRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

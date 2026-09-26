@@ -82,3 +82,52 @@ export interface ToastMessage {
   title: string;
   message?: string;
 }
+
+// Product Management Types
+export type ProductStatus = 'In Stock' | 'Low Stock' | 'Out of Stock';
+
+export interface Product {
+  id: number;
+  sku: string;
+  name: string;
+  category: string;
+  quantity: number;
+  min_stock_level: number;
+  unit_price: number;
+  warehouse_code: string;
+  status: ProductStatus;
+  warehouse_name?: string;
+  warehouse_location?: string;
+}
+
+export interface ProductFormData {
+  sku: string;
+  name: string;
+  category: string;
+  quantity: number;
+  min_stock_level: number;
+  unit_price: number;
+  warehouse_code: string;
+}
+
+export interface ProductFilterState {
+  search: string;
+  category: string;
+  warehouse: string;
+  status: string;
+  sortBy: 'id' | 'name' | 'sku' | 'quantity' | 'unit_price';
+  order: 'ASC' | 'DESC';
+}
+
+export interface ProductsMeta {
+  categories: string[];
+  warehouses: Warehouse[];
+  stats: {
+    totalSkus: number;
+    totalUnits: number;
+    totalValuation: number;
+    lowStockCount: number;
+    outOfStockCount: number;
+  };
+}
+
