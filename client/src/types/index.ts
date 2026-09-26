@@ -314,3 +314,74 @@ export interface InternalTransfersMeta {
     canceled: number;
   };
 }
+
+// --- Inventory Adjustments Module Types ---
+
+export type InventoryAdjustmentStatus = 'Draft' | 'Waiting' | 'Ready' | 'Done' | 'Canceled';
+
+export type InventoryAdjustmentType = 'Increase' | 'Decrease' | 'Set';
+
+export interface InventoryAdjustmentItem {
+  id?: number;
+  adjustment_id?: number;
+  product_id: number;
+  quantity: number;
+  previous_quantity: number;
+  adjusted_quantity: number;
+  sku?: string;
+  product_name?: string;
+  category?: string;
+  unit_price?: number;
+  total_product_stock?: number;
+  current_warehouse_stock?: number;
+}
+
+export interface InventoryAdjustment {
+  id: number;
+  reference: string;
+  warehouse_code: string;
+  warehouse_name?: string;
+  warehouse_location?: string;
+  reason: string;
+  adjustment_type: InventoryAdjustmentType;
+  status: InventoryAdjustmentStatus;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+  item_lines: number;
+  total_qty: number;
+  items: InventoryAdjustmentItem[];
+}
+
+export interface InventoryAdjustmentFormData {
+  warehouseCode: string;
+  reason: string;
+  adjustmentType: InventoryAdjustmentType;
+  status: InventoryAdjustmentStatus;
+  notes: string;
+  items: { productId: number; quantity: number }[];
+}
+
+export interface InventoryAdjustmentFilterState {
+  search: string;
+  status: string;
+  warehouse: string;
+  adjustmentType: string;
+  dateFrom: string;
+  dateTo: string;
+  sortBy: 'id' | 'reference' | 'warehouse_code' | 'reason' | 'adjustment_type' | 'created_at' | 'status';
+  order: 'ASC' | 'DESC';
+}
+
+export interface InventoryAdjustmentsMeta {
+  warehouses: Warehouse[];
+  reasons: string[];
+  types: InventoryAdjustmentType[];
+  stats: {
+    total: number;
+    pending: number;
+    done: number;
+    canceled: number;
+  };
+}
+

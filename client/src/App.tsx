@@ -16,6 +16,7 @@ import { ProductsPage } from './pages/ProductsPage';
 import { ReceiptsPage } from './pages/ReceiptsPage';
 import { DeliveryOrdersPage } from './pages/DeliveryOrdersPage';
 import { InternalTransfersPage } from './pages/InternalTransfersPage';
+import { InventoryAdjustmentsPage } from './pages/InventoryAdjustmentsPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 
 // Loading Spinner for session initialization
@@ -103,23 +104,7 @@ function AppRoutes() {
         <Route path="/delivery-orders" element={<DeliveryOrdersPage />} />
 
         <Route path="/internal-transfers" element={<InternalTransfersPage />} />
-
-        <Route
-          path="/inventory-adjustments"
-          element={
-            <PlaceholderPage
-              title="Inventory Adjustments & Audits"
-              description="Cycle counts, annual physical inventory reconciliation, and scrap write-offs"
-              moduleKey="inventory-adjustments"
-              features={[
-                'ABC cycle counting schedule generation',
-                'Blind counts vs expected system quantities with variance thresholds',
-                'Manager approval workflows for stock write-offs and scrap',
-                'Root cause categorization for loss prevention analytics',
-              ]}
-            />
-          }
-        />
+        <Route path="/inventory-adjustments" element={<InventoryAdjustmentsPage />} />
 
         <Route
           path="/move-history"

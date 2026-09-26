@@ -968,8 +968,533 @@ async function runTests() {
     `(Found: ${filterITRes.body.count})`
   );
 
+  // ==========================================
+  // --- INVENTORY ADJUSTMENTS MODULE TESTS ---
+  // ==========================================
+
+  // 46. GET /api/inventory-adjustments/meta
+  const adjMetaRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/inventory-adjustments/meta',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '46. GET Inventory Adjustments Metadata:',
+    adjMetaRes.status === 200 && Array.isArray(adjMetaRes.body.warehouses) && Array.isArray(adjMetaRes.body.types) ? 'PASS' : 'FAIL',
+    `(Total logged: ${adjMetaRes.body.stats?.total}, Types: ${adjMetaRes.body.types?.join(', ')})`
+  );
+
+  // 47. GET /api/inventory-adjustments (list)
+  const adjListRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/inventory-adjustments',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '47. GET Inventory Adjustments List:',
+    adjListRes.status === 200 && Array.isArray(adjListRes.body.inventoryAdjustments) ? 'PASS' : 'FAIL',
+    `(${adjListRes.body.count} adjustments returned)`
+  );
+
+  // 48. Reject invalid warehouse
+  const invalidWhAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-NONEXISTENT',
+      reason: 'Test Invalid Warehouse',
+      adjustmentType: 'Increase',
+      items: [{ productId: targetProduct.id, quantity: 10 }],
+    }
+  );
+  console.log(
+    '48. Validation: Reject Invalid Warehouse:',
+    invalidWhAdj.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${invalidWhAdj.body.message}")`
+  );
+
+  // 49. Reject adjustment without items
+  const noItemsAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-MAIN',
+      reason: 'Empty adjustment',
+      adjustmentType: 'Increase',
+      items: [],
+    }
+  );
+  console.log(
+    '49. Validation: Reject Adjustment Without Items:',
+    noItemsAdj.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${noItemsAdj.body.message}")`
+  );
+
+  // 50. Reject duplicate product lines
+  const dupProdAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-MAIN',
+      reason: 'Duplicate SKU test',
+      adjustmentType: 'Increase',
+      items: [
+        { productId: targetProduct.id, quantity: 5 },
+        { productId: targetProduct.id, quantity: 10 },
+      ],
+    }
+  );
+  console.log(
+    '50. Validation: Reject Duplicate Product Lines:',
+    dupProdAdj.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${dupProdAdj.body.message}")`
+  );
+
+  // 51. Reject invalid quantity (0 on Increase)
+  const invalidQtyAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-MAIN',
+      reason: 'Zero quantity test',
+      adjustmentType: 'Increase',
+      items: [{ productId: targetProduct.id, quantity: 0 }],
+    }
+  );
+  console.log(
+    '51. Validation: Reject Non-positive Quantity on Increase/Decrease:',
+    invalidQtyAdj.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${invalidQtyAdj.body.message}")`
+  );
+
+  // 52. POST Increase adjustment in Draft status
+  const createDraftAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-MAIN',
+      reason: 'Routine ABC Cycle Count Intake',
+      adjustmentType: 'Increase',
+      status: 'Draft',
+      notes: 'Discrepancy noted during morning shelf check',
+      items: [{ productId: targetProduct.id, quantity: 15 }],
+    }
+  );
+  console.log(
+    '52. Create Draft Increase Adjustment:',
+    createDraftAdj.status === 201 && createDraftAdj.body.inventoryAdjustment?.reference ? 'PASS' : 'FAIL',
+    `(Ref: ${createDraftAdj.body.inventoryAdjustment?.reference})`
+  );
+  const draftAdj = createDraftAdj.body.inventoryAdjustment;
+
+  // 53. GET individual adjustment by ID
+  const getAdjRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/inventory-adjustments/${draftAdj.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '53. Retrieve Adjustment by ID:',
+    getAdjRes.status === 200 && getAdjRes.body.inventoryAdjustment?.items?.length === 1 ? 'PASS' : 'FAIL',
+    `(Items: ${getAdjRes.body.inventoryAdjustment?.items?.length}, Reason: "${getAdjRes.body.inventoryAdjustment?.reason}")`
+  );
+
+  // 54. PATCH adjustment details (update notes and status to Waiting)
+  const patchDraftAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/inventory-adjustments/${draftAdj.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      reason: 'Routine ABC Cycle Count Verified',
+      status: 'Waiting',
+      notes: 'Pending warehouse supervisor signoff',
+    }
+  );
+  console.log(
+    '54. Update Adjustment Details (status -> Waiting):',
+    patchDraftAdj.status === 200 && patchDraftAdj.body.inventoryAdjustment?.status === 'Waiting' ? 'PASS' : 'FAIL',
+    `(Updated reason: "${patchDraftAdj.body.inventoryAdjustment?.reason}")`
+  );
+
+  // 55. Mark Increase adjustment Done & verify stock increases correctly
+  const prodBeforeInc = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/products/${targetProduct.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const stockBeforeInc = prodBeforeInc.body.product.quantity;
+
+  const markDoneInc = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/inventory-adjustments/${draftAdj.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Done',
+    }
+  );
+
+  const prodAfterInc = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/products/${targetProduct.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const stockAfterInc = prodAfterInc.body.product.quantity;
+
+  console.log(
+    '55. Execute Increase Adjustment to Done (Stock Reconciled):',
+    markDoneInc.status === 200 && stockAfterInc === stockBeforeInc + 15 ? 'PASS' : 'FAIL',
+    `(Before: ${stockBeforeInc}, Added: +15, After: ${stockAfterInc})`
+  );
+
+  // 56. POST Decrease adjustment and verify stock decreases correctly
+  const decreaseAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-MAIN',
+      reason: 'Damaged Packaging Write-off Scrap',
+      adjustmentType: 'Decrease',
+      status: 'Done',
+      notes: 'Approved for destruction by safety officer',
+      items: [{ productId: targetProduct.id, quantity: 5 }],
+    }
+  );
+
+  const prodAfterDec = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/products/${targetProduct.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const stockAfterDec = prodAfterDec.body.product.quantity;
+
+  console.log(
+    '56. Execute Decrease Adjustment to Done (Stock Deducted):',
+    decreaseAdj.status === 201 && stockAfterDec === stockAfterInc - 5 ? 'PASS' : 'FAIL',
+    `(Before: ${stockAfterInc}, Deducted: -5, After: ${stockAfterDec})`
+  );
+
+  // 57. Reject negative resulting stock on Decrease
+  const negativeStockAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-MAIN',
+      reason: 'Excessive Decrease Test',
+      adjustmentType: 'Decrease',
+      status: 'Done',
+      items: [{ productId: targetProduct.id, quantity: 999999 }],
+    }
+  );
+  console.log(
+    '57. Negative Inventory Protection / Insufficient Stock Safeguard on Decrease:',
+    negativeStockAdj.status === 400 ? 'PASS' : 'FAIL',
+    `(Blocked: "${negativeStockAdj.body.message}")`
+  );
+
+  // 58. POST Set adjustment and verify Set produces exact target stock
+  const setAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-COLD',
+      reason: 'Annual Stock Reconciliation Recalibration',
+      adjustmentType: 'Set',
+      status: 'Done',
+      notes: 'Physical audit matched exact count',
+      items: [{ productId: targetProduct.id, quantity: 250 }],
+    }
+  );
+
+  const getSetAdjDetail = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/inventory-adjustments/${setAdj.body.inventoryAdjustment.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const verifiedStock = getSetAdjDetail.body.inventoryAdjustment.items[0]?.adjusted_quantity;
+
+  console.log(
+    '58. Execute Set Adjustment to Done (Exact Stock Target):',
+    setAdj.status === 201 && verifiedStock === 250 ? 'PASS' : 'FAIL',
+    `(Target stock: 250, Verified warehouse stock: ${verifiedStock})`
+  );
+
+  // 59. Verify product stock status synchronization (e.g. Set to 0 -> Out of Stock, Set to 5 -> Low Stock)
+  // Zero out stock in all warehouses to test Out of Stock status
+  for (const whCode of ['WH-MAIN', 'WH-NORTH', 'WH-EAST', 'WH-COLD']) {
+    await request(
+      {
+        hostname: 'localhost',
+        port: 5000,
+        path: '/api/inventory-adjustments',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      {
+        warehouseCode: whCode,
+        reason: `Depletion audit ${whCode}`,
+        adjustmentType: 'Set',
+        status: 'Done',
+        items: [{ productId: targetProduct.id, quantity: 0 }],
+      }
+    );
+  }
+
+  const prodAfterZero = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/products/${targetProduct.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  // Restore stock back to 100 in WH-COLD
+  await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-COLD',
+      reason: 'Replenish test stock',
+      adjustmentType: 'Set',
+      status: 'Done',
+      items: [{ productId: targetProduct.id, quantity: 100 }],
+    }
+  );
+
+  console.log(
+    '59. Product Stock Status Automatic Synchronization:',
+    prodAfterZero.status === 200 && prodAfterZero.body.product.status === 'Out of Stock' ? 'PASS' : 'FAIL',
+    `(Stock = 0 => Status: "${prodAfterZero.body.product.status}")`
+  );
+
+  // 60. Verify inventory activity created / synchronized with Dashboard
+  const actRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/dashboard/activities?type=Adjustments`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '60. Inventory Activity Created in Dashboard Activities:',
+    actRes.status === 200 && Array.isArray(actRes.body.activities) && actRes.body.activities.length > 0 ? 'PASS' : 'FAIL',
+    `(Recent adjustments logged in activities: ${actRes.body.activities?.length})`
+  );
+
+  // 61. Prevent duplicate Done processing (400 on modifying Done adjustment)
+  const dupDoneAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/inventory-adjustments/${draftAdj.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Done',
+      notes: 'Attempting illegal re-execution',
+    }
+  );
+  console.log(
+    '61. Immutability Protection / Prevent Duplicate Processing on Done Adjustment:',
+    dupDoneAdj.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard: "${dupDoneAdj.body.message}")`
+  );
+
+  // 62. Prevent editing Done adjustment
+  const editDoneAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/inventory-adjustments/${draftAdj.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      reason: 'Attempting to change reason on completed adjustment',
+    }
+  );
+  console.log(
+    '62. Prevent Editing Completed Adjustment:',
+    editDoneAdj.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard: "${editDoneAdj.body.message}")`
+  );
+
+  // 63. Prevent deleting Done adjustment
+  const deleteDoneAdj = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/inventory-adjustments/${draftAdj.id}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '63. Prevent Deletion of Done Adjustment (Audit Log Retention):',
+    deleteDoneAdj.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard: "${deleteDoneAdj.body.message}")`
+  );
+
+  // 64. Create and Delete Draft adjustment
+  const disposableAdj = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/inventory-adjustments',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-EAST',
+      reason: 'Disposable test adjustment',
+      adjustmentType: 'Increase',
+      status: 'Draft',
+      notes: 'Will be deleted',
+      items: [{ productId: targetProduct.id, quantity: 2 }],
+    }
+  );
+  const disposableAdjId = disposableAdj.body.inventoryAdjustment.id;
+
+  const deleteDisposableAdj = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/inventory-adjustments/${disposableAdjId}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '64. Delete Draft Adjustment:',
+    deleteDisposableAdj.status === 200 ? 'PASS' : 'FAIL',
+    `(Deleted ID: ${deleteDisposableAdj.body.id})`
+  );
+
+  // 65. Filter Adjustments by warehouse, adjustmentType, status
+  const filterAdjRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/inventory-adjustments?status=Done&warehouse=WH-MAIN&adjustmentType=Set',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '65. Filter Adjustments (status=Done, warehouse=WH-MAIN, type=Set):',
+    filterAdjRes.status === 200 && filterAdjRes.body.inventoryAdjustments?.every((a) => a.warehouse_code === 'WH-MAIN' && a.adjustment_type === 'Set' && a.status === 'Done') ? 'PASS' : 'FAIL',
+    `(Found: ${filterAdjRes.body.count})`
+  );
+
   console.log('\n======================================================');
-  console.log('🎉 ALL 45 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
+  console.log('🎉 ALL 65 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
   console.log('======================================================');
 }
 

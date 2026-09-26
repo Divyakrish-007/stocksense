@@ -171,6 +171,36 @@ function initDatabase() {
     );
   `);
 
+  // Create Inventory Adjustments Table (dedicated module table)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inventory_adjustments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference TEXT UNIQUE NOT NULL,
+      warehouse_code TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      adjustment_type TEXT NOT NULL, -- 'Increase', 'Decrease', 'Set'
+      status TEXT NOT NULL DEFAULT 'Draft', -- 'Draft', 'Waiting', 'Done', 'Canceled'
+      notes TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (warehouse_code) REFERENCES warehouses(code) ON DELETE RESTRICT
+    );
+  `);
+
+  // Create Inventory Adjustment Line Items Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inventory_adjustment_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      adjustment_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      previous_quantity INTEGER NOT NULL DEFAULT 0,
+      adjusted_quantity INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (adjustment_id) REFERENCES inventory_adjustments(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+    );
+  `);
+
   seedData();
 }
 
@@ -282,6 +312,7 @@ function seedData() {
   seedDeliveryOrders();
   syncInitialWarehouseStock();
   seedInternalTransfers();
+  seedInventoryAdjustments();
 }
 
 function seedReceipts() {
@@ -504,6 +535,100 @@ function seedInternalTransfers() {
     }
   } catch (err) {
     console.error('Internal transfers seed error (non-fatal):', err.message);
+  }
+}
+
+function seedInventoryAdjustments() {
+  try {
+    const count = db.prepare('SELECT COUNT(*) as c FROM inventory_adjustments').get().c;
+    if (count > 0) return;
+
+    console.log('Seeding inventory adjustments module data...');
+
+    const products = db.prepare('SELECT id, sku, quantity, warehouse_code FROM products ORDER BY id').all();
+    if (products.length === 0) return;
+
+    const insertAdj = db.prepare(`
+      INSERT INTO inventory_adjustments (reference, warehouse_code, reason, adjustment_type, status, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertItem = db.prepare(`
+      INSERT INTO inventory_adjustment_items (adjustment_id, product_id, quantity, previous_quantity, adjusted_quantity)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    const seedData = [
+      {
+        ref: 'ADJ-2026-1001',
+        wh: 'WH-MAIN',
+        reason: 'Annual Physical Inventory Audit',
+        type: 'Increase',
+        status: 'Done',
+        notes: 'Found additional pallet during annual audit in aisle 4',
+        createdAt: '2026-09-24 10:30:00',
+        items: [{ pid: products[0].id, qty: 10, prev: 1230, adj: 1240 }],
+      },
+      {
+        ref: 'ADJ-2026-1002',
+        wh: 'WH-EAST',
+        reason: 'Damaged Packaging Write-off',
+        type: 'Decrease',
+        status: 'Done',
+        notes: 'Water leak damage approved by warehouse lead for salvage scrap',
+        createdAt: '2026-09-25 14:15:00',
+        items: [{ pid: products[4] ? products[4].id : products[0].id, qty: 4, prev: 19, adj: 15 }],
+      },
+      {
+        ref: 'ADJ-2026-1003',
+        wh: 'WH-MAIN',
+        reason: 'Routine ABC Cycle Count',
+        type: 'Set',
+        status: 'Ready',
+        notes: 'Physical count verified by cycle count team Q3',
+        createdAt: '2026-09-26 09:00:00',
+        items: [{ pid: products[1] ? products[1].id : products[0].id, qty: 48, prev: 50, adj: 48 }],
+      },
+      {
+        ref: 'ADJ-2026-1004',
+        wh: 'WH-NORTH',
+        reason: 'Supplier Shortage Reconciliation',
+        type: 'Decrease',
+        status: 'Waiting',
+        notes: 'Discrepancy reported during receiving inspection, awaiting vendor credit',
+        createdAt: '2026-09-27 11:45:00',
+        items: [{ pid: products[6] ? products[6].id : products[0].id, qty: 20, prev: 2150, adj: 2130 }],
+      },
+      {
+        ref: 'ADJ-2026-1005',
+        wh: 'WH-COLD',
+        reason: 'Barcode Calibration Drift Correction',
+        type: 'Increase',
+        status: 'Draft',
+        notes: 'SKU scan mismatch rectified during weekly shelf audit',
+        createdAt: '2026-09-28 16:20:00',
+        items: [{ pid: products[14] ? products[14].id : products[0].id, qty: 5, prev: 89, adj: 94 }],
+      },
+      {
+        ref: 'ADJ-2026-1006',
+        wh: 'WH-MAIN',
+        reason: 'Sample Testing Deduction',
+        type: 'Decrease',
+        status: 'Canceled',
+        notes: 'Destructive R&D testing canceled by product engineering',
+        createdAt: '2026-09-23 08:00:00',
+        items: [{ pid: products[0].id, qty: 2, prev: 1240, adj: 1238 }],
+      },
+    ];
+
+    for (const d of seedData) {
+      const res = insertAdj.run(d.ref, d.wh, d.reason, d.type, d.status, d.notes, d.createdAt, d.createdAt);
+      for (const it of d.items) {
+        insertItem.run(res.lastInsertRowid, it.pid, it.qty, it.prev, it.adj);
+      }
+    }
+  } catch (err) {
+    console.error('Inventory adjustments seed error (non-fatal):', err.message);
   }
 }
 
