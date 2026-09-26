@@ -133,6 +133,44 @@ function initDatabase() {
     );
   `);
 
+  // Create Internal Transfers Table (dedicated module table)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS internal_transfers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference TEXT UNIQUE NOT NULL,
+      source_warehouse_code TEXT NOT NULL,
+      dest_warehouse_code TEXT NOT NULL,
+      scheduled_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Draft',
+      notes TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Create Internal Transfer Line Items Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS internal_transfer_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      internal_transfer_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (internal_transfer_id) REFERENCES internal_transfers(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+    );
+  `);
+
+  // Create Product Warehouse Stock Table for Granular Multi-Facility Tracking
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_warehouse_stock (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      warehouse_code TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(product_id, warehouse_code),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+  `);
+
   seedData();
 }
 
@@ -242,6 +280,8 @@ function seedData() {
   console.log('StockSense Database initialization complete.');
   seedReceipts();
   seedDeliveryOrders();
+  syncInitialWarehouseStock();
+  seedInternalTransfers();
 }
 
 function seedReceipts() {
@@ -366,7 +406,137 @@ function seedDeliveryOrders() {
   }
 }
 
+function syncInitialWarehouseStock() {
+  try {
+    const products = db.prepare('SELECT id, warehouse_code, quantity FROM products').all();
+    const warehouses = db.prepare('SELECT code FROM warehouses').all();
+    const insertPWS = db.prepare(`
+      INSERT OR IGNORE INTO product_warehouse_stock (product_id, warehouse_code, quantity)
+      VALUES (?, ?, ?)
+    `);
+
+    for (const p of products) {
+      // Primary warehouse has the product's quantity
+      insertPWS.run(p.id, p.warehouse_code, p.quantity);
+      // Other facilities have 0 initially
+      for (const wh of warehouses) {
+        if (wh.code !== p.warehouse_code) {
+          insertPWS.run(p.id, wh.code, 0);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('syncInitialWarehouseStock error:', err.message);
+  }
+}
+
+function seedInternalTransfers() {
+  try {
+    const count = db.prepare('SELECT COUNT(*) as c FROM internal_transfers').get().c;
+    if (count > 0) return;
+
+    console.log('Seeding internal transfers module data...');
+
+    const products = db.prepare('SELECT id, sku, warehouse_code, quantity FROM products ORDER BY id').all();
+    if (products.length === 0) return;
+
+    const insertIT = db.prepare(`
+      INSERT INTO internal_transfers (reference, source_warehouse_code, dest_warehouse_code, scheduled_date, status, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    const insertItem = db.prepare(`
+      INSERT INTO internal_transfer_items (internal_transfer_id, product_id, quantity) VALUES (?, ?, ?)
+    `);
+
+    const transferData = [
+      {
+        ref: 'IT-2026-3001',
+        src: 'WH-MAIN',
+        dest: 'WH-NORTH',
+        date: '2026-09-28',
+        status: 'Ready',
+        notes: 'Regional inventory rebalancing for upcoming promotional intake',
+        items: [{ pid: products[0].id, qty: 50 }],
+      },
+      {
+        ref: 'IT-2026-3002',
+        src: 'WH-NORTH',
+        dest: 'WH-EAST',
+        date: '2026-09-29',
+        status: 'Waiting',
+        notes: 'Packaging supplies transfer to East Logistics Hub',
+        items: [{ pid: products[6] ? products[6].id : products[0].id, qty: 100 }],
+      },
+      {
+        ref: 'IT-2026-3003',
+        src: 'WH-EAST',
+        dest: 'WH-MAIN',
+        date: '2026-09-30',
+        status: 'Draft',
+        notes: 'Fasteners allocation replenishment for central production assembly',
+        items: [{ pid: products[7] ? products[7].id : products[0].id, qty: 30 }],
+      },
+      {
+        ref: 'IT-2026-3004',
+        src: 'WH-MAIN',
+        dest: 'WH-COLD',
+        date: '2026-09-25',
+        status: 'Done',
+        notes: 'Completed stock shuttle transfer verified by both warehouse managers',
+        items: [{ pid: products[1] ? products[1].id : products[0].id, qty: 10 }],
+      },
+      {
+        ref: 'IT-2026-3005',
+        src: 'WH-COLD',
+        dest: 'WH-MAIN',
+        date: '2026-09-24',
+        status: 'Canceled',
+        notes: 'Canceled due to shuttle refrigeration maintenance window',
+        items: [{ pid: products[2] ? products[2].id : products[0].id, qty: 5 }],
+      },
+    ];
+
+    for (const t of transferData) {
+      const result = insertIT.run(t.ref, t.src, t.dest, t.date, t.status, t.notes);
+      for (const item of t.items) {
+        insertItem.run(result.lastInsertRowid, item.pid, item.qty);
+      }
+    }
+  } catch (err) {
+    console.error('Internal transfers seed error (non-fatal):', err.message);
+  }
+}
+
+function getWarehouseStock(productId, warehouseCode) {
+  const row = db
+    .prepare('SELECT quantity FROM product_warehouse_stock WHERE product_id = ? AND warehouse_code = ?')
+    .get(productId, warehouseCode);
+  if (row) return row.quantity;
+  const prod = db.prepare('SELECT quantity, warehouse_code FROM products WHERE id = ?').get(productId);
+  if (prod && prod.warehouse_code === warehouseCode) return prod.quantity;
+  return 0;
+}
+
+function setWarehouseStock(productId, warehouseCode, quantity) {
+  db.prepare(`
+    INSERT INTO product_warehouse_stock (product_id, warehouse_code, quantity)
+    VALUES (?, ?, ?)
+    ON CONFLICT(product_id, warehouse_code) DO UPDATE SET quantity = excluded.quantity
+  `).run(productId, warehouseCode, quantity);
+}
+
+function adjustWarehouseStock(productId, warehouseCode, delta) {
+  db.prepare(`
+    INSERT INTO product_warehouse_stock (product_id, warehouse_code, quantity)
+    VALUES (?, ?, ?)
+    ON CONFLICT(product_id, warehouse_code) DO UPDATE SET quantity = quantity + excluded.quantity
+  `).run(productId, warehouseCode, delta);
+}
+
 module.exports = {
   db,
   initDatabase,
+  getWarehouseStock,
+  setWarehouseStock,
+  adjustWarehouseStock,
 };

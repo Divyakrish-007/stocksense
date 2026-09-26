@@ -251,3 +251,66 @@ export interface DeliveryOrdersMeta {
     canceled: number;
   };
 }
+
+// --- Internal Transfers Module Types ---
+
+export type InternalTransferStatus = 'Draft' | 'Waiting' | 'Ready' | 'Done' | 'Canceled';
+
+export interface InternalTransferItem {
+  id?: number;
+  internal_transfer_id?: number;
+  product_id: number;
+  quantity: number;
+  sku?: string;
+  product_name?: string;
+  category?: string;
+  unit_price?: number;
+  source_stock?: number;
+  dest_stock?: number;
+}
+
+export interface InternalTransfer {
+  id: number;
+  reference: string;
+  source_warehouse_code: string;
+  source_warehouse_name?: string;
+  dest_warehouse_code: string;
+  dest_warehouse_name?: string;
+  scheduled_date: string;
+  status: InternalTransferStatus;
+  notes?: string;
+  created_at?: string;
+  item_lines: number;
+  total_qty: number;
+  items: InternalTransferItem[];
+}
+
+export interface InternalTransferFormData {
+  sourceWarehouseCode: string;
+  destWarehouseCode: string;
+  scheduledDate: string;
+  status: InternalTransferStatus;
+  notes: string;
+  items: { productId: number; quantity: number }[];
+}
+
+export interface InternalTransferFilterState {
+  search: string;
+  status: string;
+  sourceWarehouse: string;
+  destWarehouse: string;
+  dateFrom: string;
+  dateTo: string;
+  sortBy: 'id' | 'reference' | 'source_warehouse_code' | 'dest_warehouse_code' | 'scheduled_date' | 'status';
+  order: 'ASC' | 'DESC';
+}
+
+export interface InternalTransfersMeta {
+  warehouses: Warehouse[];
+  stats: {
+    total: number;
+    pending: number;
+    done: number;
+    canceled: number;
+  };
+}

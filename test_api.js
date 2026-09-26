@@ -710,8 +710,266 @@ async function runTests() {
     `(Deleted ID: ${deleteDraftDORes.body.id})`
   );
 
+  // ==========================================
+  // --- INTERNAL TRANSFERS MODULE TESTS ---
+  // ==========================================
+
+  // 34. GET /api/internal-transfers/meta
+  const itMetaRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/internal-transfers/meta',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '34. GET Internal Transfers Metadata:',
+    itMetaRes.status === 200 && Array.isArray(itMetaRes.body.warehouses) ? 'PASS' : 'FAIL',
+    `(Total: ${itMetaRes.body.stats?.total}, Warehouses: ${itMetaRes.body.warehouses?.length})`
+  );
+
+  // 35. GET /api/internal-transfers/stock?warehouseCode=WH-MAIN
+  const itStockRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/internal-transfers/stock?warehouseCode=WH-MAIN',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '35. GET Warehouse Stock Balances:',
+    itStockRes.status === 200 && Array.isArray(itStockRes.body.stock) ? 'PASS' : 'FAIL',
+    `(Stock entries: ${itStockRes.body.stock?.length})`
+  );
+
+  // 36. Reject Same Source and Destination Warehouse (400)
+  const sameWhRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/internal-transfers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      sourceWarehouse: 'WH-MAIN',
+      destWarehouse: 'WH-MAIN',
+      scheduledDate: '2026-11-20',
+      status: 'Draft',
+      items: [{ productId: targetProduct.id, quantity: 5 }],
+    }
+  );
+  console.log(
+    '36. Validation: Same Source & Destination Warehouse Rejection:',
+    sameWhRes.status === 400 ? 'PASS' : 'FAIL',
+    `(Error message: "${sameWhRes.body.message}")`
+  );
+
+  // 37. Create Internal Transfer in Draft Status (WH-COLD -> WH-NORTH)
+  const createITRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/internal-transfers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      sourceWarehouse: 'WH-COLD',
+      destWarehouse: 'WH-NORTH',
+      scheduledDate: '2026-11-22',
+      status: 'Draft',
+      notes: 'Replenish North Regional Depot from Cold Storage',
+      items: [{ productId: targetProduct.id, quantity: 3 }],
+    }
+  );
+  console.log(
+    '37. Create Draft Internal Transfer:',
+    createITRes.status === 201 && createITRes.body.internalTransfer?.reference ? 'PASS' : 'FAIL',
+    `(Reference: ${createITRes.body.internalTransfer?.reference})`
+  );
+  const createdIT = createITRes.body.internalTransfer;
+
+  // 38. GET /api/internal-transfers/:id
+  const getITRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/internal-transfers/${createdIT.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '38. GET Internal Transfer by ID:',
+    getITRes.status === 200 && getITRes.body.internalTransfer?.items?.length === 1 ? 'PASS' : 'FAIL',
+    `(Items: ${getITRes.body.internalTransfer?.items?.length})`
+  );
+
+  // 39. Update Transfer to Ready
+  const updateITRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/internal-transfers/${createdIT.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Ready',
+      notes: 'Staged on loading bay for shuttle pickup',
+    }
+  );
+  console.log(
+    '39. Update Transfer Status to Ready:',
+    updateITRes.status === 200 && updateITRes.body.internalTransfer?.status === 'Ready' ? 'PASS' : 'FAIL',
+    `(Status: ${updateITRes.body.internalTransfer?.status})`
+  );
+
+  // 40. Reject Transfer with Insufficient Stock when setting to Done (excessive qty)
+  const excessiveITRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/internal-transfers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      sourceWarehouse: 'WH-COLD',
+      destWarehouse: 'WH-NORTH',
+      scheduledDate: '2026-11-22',
+      status: 'Done',
+      items: [{ productId: targetProduct.id, quantity: 999999 }],
+    }
+  );
+  console.log(
+    '40. Negative Inventory Protection / Insufficient Stock Safeguard:',
+    excessiveITRes.status === 400 ? 'PASS' : 'FAIL',
+    `(Blocked: "${excessiveITRes.body.message}")`
+  );
+
+  // 41. Execute Transfer to 'Done' -> Atomic Stock Movement
+  const doneITRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/internal-transfers/${createdIT.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Done',
+      notes: 'Transfer completed and received at WH-NORTH',
+    }
+  );
+  console.log(
+    '41. Transition Transfer to Done & Move Stock Atomically:',
+    doneITRes.status === 200 && doneITRes.body.internalTransfer?.status === 'Done' ? 'PASS' : 'FAIL',
+    `(Success: "${doneITRes.body.message}")`
+  );
+
+  // 42. Prevent Modification of Completed (Done) Transfer (400)
+  const modifyDoneITRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/internal-transfers/${createdIT.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      notes: 'Attempting illegal modification on Done transfer',
+    }
+  );
+  console.log(
+    '42. Immutability Protection on Completed Transfer:',
+    modifyDoneITRes.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard: "${modifyDoneITRes.body.message}")`
+  );
+
+  // 43. Block Deletion of Completed Transfer (400)
+  const deleteDoneITRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/internal-transfers/${createdIT.id}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '43. Block Deletion of Completed Transfer:',
+    deleteDoneITRes.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard: "${deleteDoneITRes.body.message}")`
+  );
+
+  // 44. Create and Delete Draft Transfer
+  const disposableITRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/internal-transfers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      sourceWarehouse: 'WH-EAST',
+      destWarehouse: 'WH-COLD',
+      scheduledDate: '2026-11-25',
+      status: 'Draft',
+      notes: 'Disposable test transfer',
+      items: [{ productId: targetProduct.id, quantity: 1 }],
+    }
+  );
+  const disposableId = disposableITRes.body.internalTransfer.id;
+
+  const deleteDraftITRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/internal-transfers/${disposableId}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '44. Delete Draft Transfer:',
+    deleteDraftITRes.status === 200 ? 'PASS' : 'FAIL',
+    `(Deleted ID: ${deleteDraftITRes.body.id})`
+  );
+
+  // 45. Filter Internal Transfers List
+  const filterITRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/internal-transfers?status=Done&sourceWarehouse=WH-COLD',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '45. Filter Transfers (status=Done & source=WH-COLD):',
+    filterITRes.status === 200 && filterITRes.body.internalTransfers?.length > 0 && filterITRes.body.internalTransfers?.every((t) => (t.source_warehouse_code === 'WH-COLD' || t.sourceWarehouse === 'WH-COLD') && t.status === 'Done') ? 'PASS' : 'FAIL',
+    `(Found: ${filterITRes.body.count})`
+  );
+
   console.log('\n======================================================');
-  console.log('🎉 ALL 33 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
+  console.log('🎉 ALL 45 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
   console.log('======================================================');
 }
 

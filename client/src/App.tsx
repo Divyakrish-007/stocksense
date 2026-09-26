@@ -15,6 +15,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { ReceiptsPage } from './pages/ReceiptsPage';
 import { DeliveryOrdersPage } from './pages/DeliveryOrdersPage';
+import { InternalTransfersPage } from './pages/InternalTransfersPage';
 import { PlaceholderPage } from './pages/PlaceholderPage';
 
 // Loading Spinner for session initialization
@@ -101,22 +102,7 @@ function AppRoutes() {
         <Route path="/receipts" element={<ReceiptsPage />} />
         <Route path="/delivery-orders" element={<DeliveryOrdersPage />} />
 
-        <Route
-          path="/internal-transfers"
-          element={
-            <PlaceholderPage
-              title="Internal Stock Transfers"
-              description="Inter-facility inventory movement and shuttle dispatch tracking"
-              moduleKey="internal-transfers"
-              features={[
-                'Multi-facility stock requisition and transfer authorization',
-                'In-transit telemetry and expected arrival estimations',
-                'Depot cross-docking and bay transfer manifests',
-                'Automated balance rebalancing between regional hubs',
-              ]}
-            />
-          }
-        />
+        <Route path="/internal-transfers" element={<InternalTransfersPage />} />
 
         <Route
           path="/inventory-adjustments"

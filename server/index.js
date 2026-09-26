@@ -10,6 +10,7 @@ const dashboardRouter = require('./routes/dashboard');
 const productsRouter = require('./routes/products');
 const receiptsRouter = require('./routes/receipts');
 const deliveryOrdersRouter = require('./routes/deliveryOrders');
+const internalTransfersRouter = require('./routes/internalTransfers');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -27,6 +28,7 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/receipts', receiptsRouter);
 app.use('/api/delivery-orders', deliveryOrdersRouter);
+app.use('/api/internal-transfers', internalTransfersRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
