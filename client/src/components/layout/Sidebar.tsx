@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import {
+import { Package,
   LayoutDashboard,
   Boxes,
   ArrowDownLeft,
@@ -41,6 +41,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { label: 'Delivery Orders', path: '/delivery-orders', icon: ArrowUpRight },
     { label: 'Internal Transfers', path: '/internal-transfers', icon: ArrowLeftRight },
     { label: 'Inventory Adjustments', path: '/inventory-adjustments', icon: SlidersHorizontal },
+    { label: 'Suppliers', path: '/suppliers', icon: Package },
+    { label: 'Purchase Orders', path: '/purchase-orders', icon: Package },
     { label: 'Move History', path: '/move-history', icon: History },
     { label: 'Settings', path: '/settings', icon: Settings },
     { label: 'My Profile', path: '/profile', icon: UserCheck },

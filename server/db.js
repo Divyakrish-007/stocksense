@@ -201,6 +201,93 @@ function initDatabase() {
     );
   `);
 
+  // Create Suppliers Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      contact_person TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      tax_id TEXT NOT NULL DEFAULT '',
+      payment_terms TEXT NOT NULL DEFAULT 'Net 30',
+      notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active', 'Inactive')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Create Purchase Orders Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference TEXT UNIQUE NOT NULL,
+      supplier_id INTEGER NOT NULL,
+      warehouse_code TEXT NOT NULL,
+      order_date TEXT NOT NULL,
+      expected_date TEXT NOT NULL,
+      payment_terms TEXT NOT NULL DEFAULT 'Net 30',
+      notes TEXT NOT NULL DEFAULT '',
+      subtotal REAL NOT NULL DEFAULT 0.0,
+      tax_total REAL NOT NULL DEFAULT 0.0,
+      discount_total REAL NOT NULL DEFAULT 0.0,
+      grand_total REAL NOT NULL DEFAULT 0.0,
+      status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft','Waiting','Approved','Ordered','Partially Received','Received','Canceled')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
+      FOREIGN KEY (warehouse_code) REFERENCES warehouses(code) ON DELETE RESTRICT
+    );
+  `);
+
+  // Create Purchase Order Items Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS purchase_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      purchase_order_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      unit_price REAL NOT NULL DEFAULT 0.0,
+      tax_rate REAL NOT NULL DEFAULT 0.0,
+      discount REAL NOT NULL DEFAULT 0.0,
+      line_total REAL NOT NULL DEFAULT 0.0,
+      quantity_received INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+    );
+  `);
+
+  // Create Purchase Order Receipts (Goods Receiving) Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS purchase_order_receipts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      purchase_order_id INTEGER NOT NULL,
+      reference TEXT UNIQUE NOT NULL,
+      received_date TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE RESTRICT
+    );
+  `);
+
+  // Create Purchase Order Receipt Items Table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS purchase_order_receipt_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_id INTEGER NOT NULL,
+      purchase_order_item_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity_received INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (receipt_id) REFERENCES purchase_order_receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_items(id) ON DELETE RESTRICT,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+    );
+  `);
+
   seedData();
 }
 
@@ -313,6 +400,8 @@ function seedData() {
   syncInitialWarehouseStock();
   seedInternalTransfers();
   seedInventoryAdjustments();
+  seedSuppliers();
+  seedPurchaseOrders();
 }
 
 function seedReceipts() {
@@ -632,6 +721,153 @@ function seedInventoryAdjustments() {
   }
 }
 
+function seedSuppliers() {
+  try {
+    const count = db.prepare('SELECT COUNT(*) as c FROM suppliers').get().c;
+    if (count > 0) return;
+
+    console.log('Seeding suppliers module data...');
+
+    const insertSupplier = db.prepare(`
+      INSERT INTO suppliers (code, name, contact_person, email, phone, address, city, tax_id, payment_terms, notes, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const suppliers = [
+      ['SUP-001', 'Apex Micro Semi Corp',      'James Hartwell',   'james.hartwell@apexmicro.com',   '+1-312-555-0191', '1200 Micro Ave, Suite 400',       'Chicago',     'US-TAX-001',  'Net 30',  'Primary electronics component supplier', 'Active'],
+      ['SUP-002', 'Global Metalcraft Inc',      'Patricia Owens',   'patricia@globalmetalcraft.com',   '+1-973-555-0142', '550 Industrial Blvd',              'Newark',      'US-TAX-002',  'Net 45',  'Stainless steel and aluminum supplier',  'Active'],
+      ['SUP-003', 'PackPro Logistics Ltd',      'Robert Nguyen',    'r.nguyen@packpro.com',            '+1-313-555-0163', '880 Packaging Park Dr',            'Detroit',     'US-TAX-003',  'Net 30',  'All packaging materials and supplies',   'Active'],
+      ['SUP-004', 'Vanguard Fasteners',         'Linda Kamau',      'linda.kamau@vanguardfast.com',    '+1-414-555-0184', '230 Hardware Center Rd',           'Milwaukee',   'US-TAX-004',  'Net 60',  'Bolts, rivets, and industrial hardware', 'Active'],
+      ['SUP-005', 'Nordic Polymers GmbH',       'Hans Mueller',     'h.mueller@nordicpolymers.de',     '+49-89-555-0215', 'Polymerstrasse 44',                'Munich',      'DE-TAX-005',  'Net 30',  'Specialty raw polymer materials',        'Active'],
+      ['SUP-006', 'TechParts Direct LLC',       'Angela Morrison',  'angela@techpartsdirect.com',      '+1-312-555-0236', '900 Tech Park Lane',               'Chicago',     'US-TAX-006',  'Net 30',  'Electronics components and modules',     'Active'],
+      ['SUP-007', 'Summit Wire & Cable Co',     'Derek Reynolds',   'derek@summitwire.com',            '+1-973-555-0257', '410 Cable Industrial Way',         'Newark',      'US-TAX-007',  'Net 45',  'Copper wire and cabling solutions',      'Active'],
+      ['SUP-008', 'Eastern Cold Supply Inc',    'Mei-Ling Zhou',    'mei.zhou@easterncold.com',        '+1-414-555-0278', '55 Refrigeration Blvd, Unit 12',   'Milwaukee',   'US-TAX-008',  'Net 30',  'Cold chain and temperature-sensitive',   'Inactive'],
+    ];
+
+    for (const s of suppliers) {
+      insertSupplier.run(...s);
+    }
+  } catch (err) {
+    console.error('Suppliers seed error (non-fatal):', err.message);
+  }
+}
+
+function seedPurchaseOrders() {
+  try {
+    const count = db.prepare('SELECT COUNT(*) as c FROM purchase_orders').get().c;
+    if (count > 0) return;
+
+    console.log('Seeding purchase orders module data...');
+
+    const products = db.prepare('SELECT id, sku, unit_price FROM products ORDER BY id').all();
+    const suppliers = db.prepare('SELECT id, code FROM suppliers ORDER BY id').all();
+    if (products.length === 0 || suppliers.length === 0) return;
+
+    const insertPO = db.prepare(`
+      INSERT INTO purchase_orders (reference, supplier_id, warehouse_code, order_date, expected_date, payment_terms, notes, subtotal, tax_total, discount_total, grand_total, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertItem = db.prepare(`
+      INSERT INTO purchase_order_items (purchase_order_id, product_id, quantity, unit_price, tax_rate, discount, line_total, quantity_received)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const pos = [
+      {
+        ref: 'PO-2026-1001', suppId: suppliers[0].id, wh: 'WH-MAIN',
+        orderDate: '2026-09-15', expectedDate: '2026-09-30', payTerms: 'Net 30',
+        notes: 'Quarterly MCU replenishment order', status: 'Received',
+        items: [
+          { pid: products[0].id, qty: 200, price: 14.50, tax: 10, disc: 0, qtyRec: 200 },
+          { pid: products[1].id, qty: 100, price: 28.00, tax: 10, disc: 5, qtyRec: 100 },
+        ],
+      },
+      {
+        ref: 'PO-2026-1002', suppId: suppliers[1].id, wh: 'WH-EAST',
+        orderDate: '2026-09-18', expectedDate: '2026-10-05', payTerms: 'Net 45',
+        notes: 'Steel sheets and aluminum extrusion restock', status: 'Ordered',
+        items: [
+          { pid: products[3].id, qty: 150, price: 22.00, tax: 8, disc: 2, qtyRec: 0 },
+          { pid: products[4] ? products[4].id : products[0].id, qty: 80, price: 85.00, tax: 8, disc: 0, qtyRec: 0 },
+        ],
+      },
+      {
+        ref: 'PO-2026-1003', suppId: suppliers[2].id, wh: 'WH-NORTH',
+        orderDate: '2026-09-20', expectedDate: '2026-10-10', payTerms: 'Net 30',
+        notes: 'Packaging materials top-up for Q4 season', status: 'Approved',
+        items: [
+          { pid: products[6] ? products[6].id : products[0].id, qty: 1000, price: 2.10, tax: 5, disc: 10, qtyRec: 0 },
+        ],
+      },
+      {
+        ref: 'PO-2026-1004', suppId: suppliers[3].id, wh: 'WH-MAIN',
+        orderDate: '2026-09-22', expectedDate: '2026-10-15', payTerms: 'Net 60',
+        notes: 'Hardware fasteners annual contract order', status: 'Waiting',
+        items: [
+          { pid: products[12] ? products[12].id : products[0].id, qty: 500, price: 9.50, tax: 10, disc: 0, qtyRec: 0 },
+          { pid: products[13] ? products[13].id : products[1].id, qty: 300, price: 16.00, tax: 10, disc: 5, qtyRec: 0 },
+        ],
+      },
+      {
+        ref: 'PO-2026-1005', suppId: suppliers[5].id, wh: 'WH-COLD',
+        orderDate: '2026-09-25', expectedDate: '2026-10-20', payTerms: 'Net 30',
+        notes: 'Lithium battery pack and sensor modules', status: 'Draft',
+        items: [
+          { pid: products[15] ? products[15].id : products[0].id, qty: 50, price: 95.00, tax: 12, disc: 0, qtyRec: 0 },
+        ],
+      },
+      {
+        ref: 'PO-2026-1006', suppId: suppliers[0].id, wh: 'WH-MAIN',
+        orderDate: '2026-09-10', expectedDate: '2026-09-28', payTerms: 'Net 30',
+        notes: 'Emergency restock for router production run', status: 'Partially Received',
+        items: [
+          { pid: products[9] ? products[9].id : products[0].id, qty: 100, price: 340.00, tax: 10, disc: 5, qtyRec: 60 },
+        ],
+      },
+      {
+        ref: 'PO-2026-1007', suppId: suppliers[4].id, wh: 'WH-EAST',
+        orderDate: '2026-09-12', expectedDate: '2026-09-22', payTerms: 'Net 30',
+        notes: 'Polymer raw material — canceled due to price revision', status: 'Canceled',
+        items: [
+          { pid: products[5] ? products[5].id : products[0].id, qty: 200, price: 110.00, tax: 8, disc: 0, qtyRec: 0 },
+        ],
+      },
+    ];
+
+    for (const po of pos) {
+      let subtotal = 0, taxTotal = 0, discTotal = 0;
+      for (const it of po.items) {
+        const lineBase = it.qty * it.price;
+        const lineDisc = lineBase * (it.disc / 100);
+        const lineTax  = (lineBase - lineDisc) * (it.tax / 100);
+        subtotal  += lineBase;
+        discTotal += lineDisc;
+        taxTotal  += lineTax;
+      }
+      const grandTotal = subtotal - discTotal + taxTotal;
+
+      const res = insertPO.run(
+        po.ref, po.suppId, po.wh,
+        po.orderDate, po.expectedDate, po.payTerms,
+        po.notes,
+        subtotal.toFixed(2), taxTotal.toFixed(2), discTotal.toFixed(2), grandTotal.toFixed(2),
+        po.status
+      );
+
+      for (const it of po.items) {
+        const lineBase = it.qty * it.price;
+        const lineDisc = lineBase * (it.disc / 100);
+        const lineTax  = (lineBase - lineDisc) * (it.tax / 100);
+        const lineTotal = lineBase - lineDisc + lineTax;
+        insertItem.run(res.lastInsertRowid, it.pid, it.qty, it.price, it.tax, it.disc, lineTotal.toFixed(2), it.qtyRec);
+      }
+    }
+  } catch (err) {
+    console.error('Purchase orders seed error (non-fatal):', err.message);
+  }
+}
+
+
 function getWarehouseStock(productId, warehouseCode) {
   const row = db
     .prepare('SELECT quantity FROM product_warehouse_stock WHERE product_id = ? AND warehouse_code = ?')
@@ -641,6 +877,7 @@ function getWarehouseStock(productId, warehouseCode) {
   if (prod && prod.warehouse_code === warehouseCode) return prod.quantity;
   return 0;
 }
+
 
 function setWarehouseStock(productId, warehouseCode, quantity) {
   db.prepare(`

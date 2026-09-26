@@ -385,3 +385,163 @@ export interface InventoryAdjustmentsMeta {
   };
 }
 
+// --- Suppliers Module Types ---
+
+export type SupplierStatus = 'Active' | 'Inactive';
+
+export interface Supplier {
+  id: number;
+  code: string;
+  name: string;
+  contact_person: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  tax_id: string;
+  payment_terms: string;
+  notes?: string;
+  status: SupplierStatus;
+  total_orders: number;
+  total_value: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SupplierFormData {
+  code: string;
+  name: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  taxId: string;
+  paymentTerms: string;
+  notes: string;
+  status: SupplierStatus;
+}
+
+export interface SupplierFilterState {
+  search: string;
+  status: string;
+  city: string;
+  sortBy: 'id' | 'code' | 'name' | 'total_orders' | 'total_value';
+  order: 'ASC' | 'DESC';
+}
+
+export interface SuppliersMeta {
+  stats: {
+    total: number;
+    active: number;
+    inactive: number;
+    totalOrders: number;
+  };
+  cities: string[];
+  paymentTerms: string[];
+}
+
+// --- Purchase Orders Module Types ---
+
+export type PurchaseOrderStatus =
+  | 'Draft'
+  | 'Waiting'
+  | 'Approved'
+  | 'Ordered'
+  | 'Partially Received'
+  | 'Received'
+  | 'Canceled';
+
+export interface PurchaseOrderItem {
+  id?: number;
+  purchase_order_id?: number;
+  product_id: number;
+  quantity: number;
+  unit_price: number;
+  tax_rate: number;
+  discount: number;
+  line_total: number;
+  quantity_received: number;
+  sku?: string;
+  product_name?: string;
+  category?: string;
+  current_stock?: number;
+}
+
+export interface PurchaseOrder {
+  id: number;
+  reference: string;
+  supplier_id: number;
+  supplier_name?: string;
+  supplier_code?: string;
+  supplier_contact?: string;
+  supplier_email?: string;
+  warehouse_code: string;
+  warehouse_name?: string;
+  warehouse_location?: string;
+  order_date: string;
+  expected_date: string;
+  payment_terms: string;
+  notes?: string;
+  subtotal: number;
+  tax_total: number;
+  discount_total: number;
+  grand_total: number;
+  status: PurchaseOrderStatus;
+  item_lines: number;
+  total_qty: number;
+  total_received: number;
+  created_at?: string;
+  updated_at?: string;
+  items: PurchaseOrderItem[];
+}
+
+export interface PurchaseOrderFormData {
+  supplierId: number | null;
+  warehouseCode: string;
+  orderDate: string;
+  expectedDate: string;
+  paymentTerms: string;
+  notes: string;
+  status: PurchaseOrderStatus;
+  items: {
+    productId: number;
+    quantity: number;
+    unitPrice: number;
+    taxRate: number;
+    discount: number;
+  }[];
+}
+
+export interface PurchaseOrderFilterState {
+  search: string;
+  status: string;
+  warehouse: string;
+  supplier: string;
+  dateFrom: string;
+  dateTo: string;
+  sortBy: 'id' | 'reference' | 'supplier_name' | 'order_date' | 'expected_date' | 'grand_total' | 'status';
+  order: 'ASC' | 'DESC';
+}
+
+export interface PurchaseOrdersMeta {
+  warehouses: Warehouse[];
+  suppliers: Pick<Supplier, 'id' | 'code' | 'name' | 'payment_terms'>[];
+  products: Product[];
+  stats: {
+    total: number;
+    draft: number;
+    waiting: number;
+    approved: number;
+    ordered: number;
+    partially_received: number;
+    received: number;
+    canceled: number;
+    total_value: number;
+  };
+}
+
+export interface ReceiveItem {
+  poItemId: number;
+  quantityReceived: number;
+}
