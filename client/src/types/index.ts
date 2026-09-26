@@ -446,6 +446,8 @@ export interface SuppliersMeta {
 export type PurchaseOrderStatus =
   | 'Draft'
   | 'Waiting'
+  | 'Ready'
+  | 'Done'
   | 'Approved'
   | 'Ordered'
   | 'Partially Received'
@@ -532,6 +534,8 @@ export interface PurchaseOrdersMeta {
     total: number;
     draft: number;
     waiting: number;
+    ready: number;
+    done: number;
     approved: number;
     ordered: number;
     partially_received: number;

@@ -3,7 +3,7 @@ const router = express.Router();
 const { db, getWarehouseStock, setWarehouseStock } = require('../db');
 const { authenticateToken } = require('./auth');
 
-// ─── Helper: sync product status ─────────────────────────────────────────────
+// ─── Helper: sync product stock status ───────────────────────────────────────
 function syncProductStatus(productId) {
   const prod = db.prepare('SELECT quantity, min_stock_level FROM products WHERE id = ?').get(productId);
   if (!prod) return;
@@ -33,31 +33,88 @@ function buildPO(row) {
   return { ...row, items };
 }
 
-// ─── Helper: recalculate PO status after receiving ───────────────────────────
-function recalcPOStatus(poId) {
-  const items = db.prepare(
-    'SELECT quantity, quantity_received FROM purchase_order_items WHERE purchase_order_id = ?'
-  ).all(poId);
+// ─── Helper: validate and compute line items ──────────────────────────────────
+function validateAndComputeItems(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { error: 'Purchase order must contain at least one product line item' };
+  }
+  const seenIds = new Set();
+  let subtotal = 0, taxTotal = 0, discountTotal = 0;
+  const computed = [];
 
-  if (!items.length) return;
+  for (const item of items) {
+    if (!item.productId) return { error: 'Each line item must have a product selected' };
+    const qty = Math.floor(Number(item.quantity));
+    if (!Number.isInteger(qty) || qty <= 0) return { error: 'Each item quantity must be a positive integer greater than 0' };
+    const price = Number(item.unitPrice ?? item.unit_price ?? 0);
+    if (isNaN(price) || price < 0) return { error: 'Unit price must be greater than or equal to 0' };
+    const taxRate = Number(item.taxRate ?? item.tax_rate ?? 0);
+    if (isNaN(taxRate) || taxRate < 0 || taxRate > 100) return { error: 'Tax rate must be between 0 and 100%' };
+    const discount = Number(item.discount ?? 0);
+    if (isNaN(discount) || discount < 0 || discount > 100) return { error: 'Discount must be between 0 and 100%' };
 
-  const allReceived = items.every(it => it.quantity_received >= it.quantity);
-  const anyReceived = items.some(it => it.quantity_received > 0);
+    if (seenIds.has(item.productId)) return { error: 'Duplicate product line items are not allowed. Each product can only appear once per purchase order.' };
+    seenIds.add(item.productId);
 
-  const currentPO = db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(poId);
-  if (currentPO?.status === 'Canceled') return;
+    const prod = db.prepare('SELECT id FROM products WHERE id = ?').get(item.productId);
+    if (!prod) return { error: `Product ID ${item.productId} not found in catalog` };
 
-  let newStatus;
-  if (allReceived) {
-    newStatus = 'Received';
-  } else if (anyReceived) {
-    newStatus = 'Partially Received';
-  } else {
-    return; // no change needed
+    const lineBase  = qty * price;
+    const lineDisc  = lineBase * (discount / 100);
+    const lineTax   = (lineBase - lineDisc) * (taxRate / 100);
+    const lineTotal = lineBase - lineDisc + lineTax;
+
+    subtotal      += lineBase;
+    discountTotal += lineDisc;
+    taxTotal      += lineTax;
+
+    computed.push({ productId: Number(item.productId), qty, price, taxRate, discount, lineTotal });
   }
 
-  db.prepare(`UPDATE purchase_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(newStatus, poId);
-  return newStatus;
+  const grandTotal = subtotal - discountTotal + taxTotal;
+  return { computed, subtotal, taxTotal, discountTotal, grandTotal };
+}
+
+// ─── Helper: atomic inventory stock intake when PO is marked 'Done' ─────────
+function processDonePO(poId, warehouseCode) {
+  const items = db.prepare('SELECT product_id, quantity FROM purchase_order_items WHERE purchase_order_id = ?').all(poId);
+  const supplier = db.prepare(`
+    SELECT s.name FROM suppliers s
+    JOIN purchase_orders po ON po.supplier_id = s.id
+    WHERE po.id = ?
+  `).get(poId);
+  const poRef = db.prepare('SELECT reference, notes FROM purchase_orders WHERE id = ?').get(poId);
+
+  for (const item of items) {
+    // Increment warehouse stock for specific facility
+    const currentWhStock = getWarehouseStock(item.product_id, warehouseCode);
+    setWarehouseStock(item.product_id, warehouseCode, currentWhStock + item.quantity);
+
+    // Increment overall product total quantity
+    db.prepare('UPDATE products SET quantity = quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
+    
+    // Mark quantity_received on line item equal to quantity
+    db.prepare('UPDATE purchase_order_items SET quantity_received = quantity WHERE purchase_order_id = ? AND product_id = ?').run(poId, item.product_id);
+
+    // Sync product stock status
+    syncProductStatus(item.product_id);
+  }
+
+  // Update PO status
+  db.prepare(`UPDATE purchase_orders SET status = 'Done', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(poId);
+
+  // Sync / log in dashboard activities
+  const act = db.prepare('SELECT id FROM inventory_activities WHERE reference = ?').get(poRef?.reference);
+  if (act) {
+    db.prepare(`UPDATE inventory_activities SET status = 'Done' WHERE id = ?`).run(act.id);
+  } else if (poRef) {
+    const todayDate = new Date().toISOString().split('T')[0];
+    db.prepare(`
+      INSERT INTO inventory_activities
+        (reference, type, contact, source_location, dest_location, category, items_count, scheduled_date, status, notes)
+      VALUES (?, 'Receipts', ?, 'Supplier / Procurement', ?, 'Purchase Order Intake', ?, ?, 'Done', ?)
+    `).run(poRef.reference, supplier ? supplier.name : 'Supplier', warehouseCode, items.length, todayDate, poRef.notes || '');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -75,13 +132,11 @@ router.get('/meta', authenticateToken, (req, res) => {
     const stats = db.prepare(`
       SELECT
         COUNT(*) AS total,
-        COUNT(CASE WHEN status = 'Draft'               THEN 1 END) AS draft,
-        COUNT(CASE WHEN status = 'Waiting'             THEN 1 END) AS waiting,
-        COUNT(CASE WHEN status = 'Approved'            THEN 1 END) AS approved,
-        COUNT(CASE WHEN status = 'Ordered'             THEN 1 END) AS ordered,
-        COUNT(CASE WHEN status = 'Partially Received'  THEN 1 END) AS partially_received,
-        COUNT(CASE WHEN status = 'Received'            THEN 1 END) AS received,
-        COUNT(CASE WHEN status = 'Canceled'            THEN 1 END) AS canceled,
+        COUNT(CASE WHEN status = 'Draft' THEN 1 END) AS draft,
+        COUNT(CASE WHEN status = 'Waiting' THEN 1 END) AS waiting,
+        COUNT(CASE WHEN status = 'Ready' THEN 1 END) AS ready,
+        COUNT(CASE WHEN status IN ('Done', 'Received') THEN 1 END) AS done,
+        COUNT(CASE WHEN status = 'Canceled' THEN 1 END) AS canceled,
         COALESCE(SUM(CASE WHEN status NOT IN ('Canceled') THEN grand_total END), 0) AS total_value
       FROM purchase_orders
     `).get();
@@ -120,9 +175,9 @@ router.get('/', authenticateToken, (req, res) => {
     const params = [];
 
     if (search?.trim()) {
-      sql += ` AND (po.reference LIKE ? OR s.name LIKE ? OR s.code LIKE ?)`;
+      sql += ` AND (po.reference LIKE ? OR s.name LIKE ? OR s.code LIKE ? OR po.notes LIKE ?)`;
       const q = `%${search.trim()}%`;
-      params.push(q, q, q);
+      params.push(q, q, q, q);
     }
     if (status && status !== 'All') {
       sql += ` AND po.status = ?`;
@@ -146,9 +201,13 @@ router.get('/', authenticateToken, (req, res) => {
     }
 
     const allowedSort = {
-      id: 'po.id', reference: 'po.reference', supplier_name: 's.name',
-      order_date: 'po.order_date', expected_date: 'po.expected_date',
-      grand_total: 'po.grand_total', status: 'po.status',
+      id: 'po.id',
+      reference: 'po.reference',
+      supplier_name: 's.name',
+      order_date: 'po.order_date',
+      expected_date: 'po.expected_date',
+      grand_total: 'po.grand_total',
+      status: 'po.status',
     };
     const sf = allowedSort[sortBy] || 'po.id';
     sql += ` ORDER BY ${sf} ${order === 'ASC' ? 'ASC' : 'DESC'}`;
@@ -193,48 +252,6 @@ router.get('/:id', authenticateToken, (req, res) => {
   }
 });
 
-// ─── Helper: validate and compute line items ──────────────────────────────────
-function validateAndComputeItems(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return { error: 'Purchase order must contain at least one line item' };
-  }
-  const seenIds = new Set();
-  let subtotal = 0, taxTotal = 0, discountTotal = 0;
-  const computed = [];
-
-  for (const item of items) {
-    if (!item.productId) return { error: 'Each item must have a product selected' };
-    const qty = Math.floor(Number(item.quantity));
-    if (!Number.isInteger(qty) || qty <= 0) return { error: 'Each item quantity must be a positive integer' };
-    const price = Number(item.unitPrice ?? item.unit_price ?? 0);
-    if (isNaN(price) || price < 0) return { error: 'Unit price must be >= 0' };
-    const taxRate = Number(item.taxRate ?? item.tax_rate ?? 0);
-    if (isNaN(taxRate) || taxRate < 0 || taxRate > 100) return { error: 'Tax rate must be 0-100' };
-    const discount = Number(item.discount ?? 0);
-    if (isNaN(discount) || discount < 0 || discount > 100) return { error: 'Discount must be 0-100%' };
-
-    if (seenIds.has(item.productId)) return { error: 'Duplicate product line items are not allowed' };
-    seenIds.add(item.productId);
-
-    const prod = db.prepare('SELECT id FROM products WHERE id = ?').get(item.productId);
-    if (!prod) return { error: `Product ID ${item.productId} not found` };
-
-    const lineBase  = qty * price;
-    const lineDisc  = lineBase * (discount / 100);
-    const lineTax   = (lineBase - lineDisc) * (taxRate / 100);
-    const lineTotal = lineBase - lineDisc + lineTax;
-
-    subtotal      += lineBase;
-    discountTotal += lineDisc;
-    taxTotal      += lineTax;
-
-    computed.push({ productId: Number(item.productId), qty, price, taxRate, discount, lineTotal });
-  }
-
-  const grandTotal = subtotal - discountTotal + taxTotal;
-  return { computed, subtotal, taxTotal, discountTotal, grandTotal };
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // POST /api/purchase-orders
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -253,7 +270,7 @@ router.post('/', authenticateToken, (req, res) => {
     if (!orderDate) return res.status(400).json({ message: 'Order date is required' });
     if (!expectedDate) return res.status(400).json({ message: 'Expected delivery date is required' });
 
-    const validStatuses = ['Draft', 'Waiting', 'Approved', 'Ordered', 'Canceled'];
+    const validStatuses = ['Draft', 'Waiting', 'Ready', 'Done', 'Canceled'];
     const cleanStatus = validStatuses.includes(status) ? status : 'Draft';
 
     const itemsResult = validateAndComputeItems(items);
@@ -264,7 +281,7 @@ router.post('/', authenticateToken, (req, res) => {
     const seq  = Math.floor(1000 + Math.random() * 9000);
     const reference = `PO-${year}-${seq}`;
 
-    const createPO = db.transaction(() => {
+    const createPOTx = db.transaction(() => {
       const result = db.prepare(`
         INSERT INTO purchase_orders
           (reference, supplier_id, warehouse_code, order_date, expected_date, payment_terms, notes, subtotal, tax_total, discount_total, grand_total, status)
@@ -273,7 +290,7 @@ router.post('/', authenticateToken, (req, res) => {
         reference, supplierId, warehouseCode.trim(), orderDate, expectedDate,
         (paymentTerms || 'Net 30').trim(), notes || '',
         subtotal.toFixed(2), taxTotal.toFixed(2), discountTotal.toFixed(2), grandTotal.toFixed(2),
-        cleanStatus
+        cleanStatus === 'Done' ? 'Draft' : cleanStatus // insert as Draft first if executing Done
       );
 
       const poId = result.lastInsertRowid;
@@ -286,18 +303,22 @@ router.post('/', authenticateToken, (req, res) => {
         `).run(poId, it.productId, it.qty, it.price, it.taxRate, it.discount, it.lineTotal.toFixed(2));
       }
 
-      // Log in dashboard activities
-      const todayDate = new Date().toISOString().split('T')[0];
+      // Log activity in dashboard
       db.prepare(`
         INSERT INTO inventory_activities
           (reference, type, contact, source_location, dest_location, category, items_count, scheduled_date, status, notes)
-        VALUES (?, 'Receipts', ?, ?, ?, 'Purchase Order', ?, ?, ?, ?)
-      `).run(reference, supplier.name, 'Supplier', warehouseCode.trim(), computed.length, expectedDate, cleanStatus, notes || '');
+        VALUES (?, 'Receipts', ?, 'Supplier / Procurement', ?, 'Purchase Order', ?, ?, ?, ?)
+      `).run(reference, supplier.name, warehouseCode.trim(), computed.length, expectedDate, cleanStatus, notes || '');
+
+      // If created directly with status = 'Done', process stock intake atomically
+      if (cleanStatus === 'Done') {
+        processDonePO(poId, warehouseCode.trim());
+      }
 
       return poId;
     });
 
-    const poId = createPO();
+    const poId = createPOTx();
 
     const row = db.prepare(`
       SELECT po.*, s.name AS supplier_name, s.code AS supplier_code,
@@ -305,7 +326,7 @@ router.post('/', authenticateToken, (req, res) => {
         w.name AS warehouse_name, w.location AS warehouse_location,
         (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS item_lines,
         (SELECT COALESCE(SUM(poi.quantity), 0) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_qty,
-        0 AS total_received
+        (SELECT COALESCE(SUM(poi.quantity_received), 0) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_received
       FROM purchase_orders po
       JOIN suppliers s ON po.supplier_id = s.id
       LEFT JOIN warehouses w ON po.warehouse_code = w.code
@@ -320,7 +341,7 @@ router.post('/', authenticateToken, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PATCH /api/purchase-orders/:id  – update details
+// PATCH /api/purchase-orders/:id
 // ═══════════════════════════════════════════════════════════════════════════════
 router.patch('/:id', authenticateToken, (req, res) => {
   try {
@@ -328,10 +349,10 @@ router.patch('/:id', authenticateToken, (req, res) => {
     const existing = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ message: 'Purchase order not found' });
 
-    const immutableStatuses = ['Received', 'Partially Received', 'Ordered'];
-    if (immutableStatuses.includes(existing.status)) {
+    // Safeguard against modifying finalized Done/Received orders
+    if (['Done', 'Received'].includes(existing.status)) {
       return res.status(400).json({
-        message: `A purchase order in "${existing.status}" status cannot be modified. Use the receive endpoint instead.`,
+        message: 'A completed purchase order is finalized and cannot be modified or re-processed',
       });
     }
     if (existing.status === 'Canceled') {
@@ -340,7 +361,7 @@ router.patch('/:id', authenticateToken, (req, res) => {
 
     const { supplierId, warehouseCode, orderDate, expectedDate, paymentTerms, notes, status, items } = req.body;
 
-    const validStatuses = ['Draft', 'Waiting', 'Approved', 'Ordered', 'Canceled'];
+    const validStatuses = ['Draft', 'Waiting', 'Ready', 'Done', 'Canceled'];
     const targetStatus = status !== undefined && validStatuses.includes(status) ? status : existing.status;
 
     let subtotalVal = existing.subtotal;
@@ -359,7 +380,9 @@ router.patch('/:id', authenticateToken, (req, res) => {
       computedItems = result.computed;
     }
 
-    const updatePO = db.transaction(() => {
+    const updatePOTx = db.transaction(() => {
+      const activeWh = warehouseCode?.trim() ?? existing.warehouse_code;
+
       db.prepare(`
         UPDATE purchase_orders SET
           supplier_id = ?, warehouse_code = ?, order_date = ?, expected_date = ?,
@@ -369,7 +392,7 @@ router.patch('/:id', authenticateToken, (req, res) => {
         WHERE id = ?
       `).run(
         supplierId ?? existing.supplier_id,
-        warehouseCode?.trim() ?? existing.warehouse_code,
+        activeWh,
         orderDate ?? existing.order_date,
         expectedDate ?? existing.expected_date,
         paymentTerms?.trim() ?? existing.payment_terms,
@@ -392,11 +415,16 @@ router.patch('/:id', authenticateToken, (req, res) => {
       // Update dashboard activity status
       const act = db.prepare('SELECT id FROM inventory_activities WHERE reference = ?').get(existing.reference);
       if (act) {
-        db.prepare(`UPDATE inventory_activities SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(targetStatus, act.id);
+        db.prepare(`UPDATE inventory_activities SET status = ? WHERE id = ?`).run(targetStatus, act.id);
+      }
+
+      // If transitioning status to 'Done', execute atomic inventory stock intake
+      if (targetStatus === 'Done') {
+        processDonePO(id, activeWh);
       }
     });
 
-    updatePO();
+    updatePOTx();
 
     const row = db.prepare(`
       SELECT po.*, s.name AS supplier_name, s.code AS supplier_code,
@@ -411,7 +439,7 @@ router.patch('/:id', authenticateToken, (req, res) => {
       WHERE po.id = ?
     `).get(id);
 
-    return res.json({ message: 'Purchase order updated successfully', purchaseOrder: buildPO(row) });
+    return res.json({ message: `Purchase order updated successfully${targetStatus === 'Done' ? ' and inventory stock updated' : ''}`, purchaseOrder: buildPO(row) });
   } catch (err) {
     console.error('PATCH /purchase-orders/:id error:', err);
     return res.status(500).json({ message: err.message || 'Failed to update purchase order' });
@@ -427,16 +455,16 @@ router.delete('/:id', authenticateToken, (req, res) => {
     const existing = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ message: 'Purchase order not found' });
 
-    if (!['Draft', 'Waiting', 'Canceled'].includes(existing.status)) {
+    if (['Done', 'Received'].includes(existing.status)) {
       return res.status(400).json({
-        message: `Cannot delete a purchase order in "${existing.status}" status. Only Draft, Waiting, or Canceled orders can be deleted.`,
+        message: 'Completed purchase orders cannot be deleted — inventory stock has already been updated',
       });
     }
 
     const hasReceipts = db.prepare('SELECT COUNT(*) AS c FROM purchase_order_receipts WHERE purchase_order_id = ?').get(id);
-    if (hasReceipts.c > 0) {
+    if (hasReceipts && hasReceipts.c > 0) {
       return res.status(400).json({
-        message: 'Cannot delete purchase order: goods have already been received against this order',
+        message: 'Cannot delete purchase order: goods receipts are linked to this order',
       });
     }
 
@@ -451,225 +479,6 @@ router.delete('/:id', authenticateToken, (req, res) => {
   } catch (err) {
     console.error('DELETE /purchase-orders/:id error:', err);
     return res.status(500).json({ message: 'Failed to delete purchase order' });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// POST /api/purchase-orders/:id/approve
-// ═══════════════════════════════════════════════════════════════════════════════
-router.post('/:id/approve', authenticateToken, (req, res) => {
-  try {
-    const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ message: 'Purchase order not found' });
-
-    if (!['Draft', 'Waiting'].includes(existing.status)) {
-      return res.status(400).json({
-        message: `Cannot approve a purchase order in "${existing.status}" status. Only Draft or Waiting orders can be approved.`,
-      });
-    }
-
-    db.prepare(`UPDATE purchase_orders SET status = 'Approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(id);
-
-    const act = db.prepare('SELECT id FROM inventory_activities WHERE reference = ?').get(existing.reference);
-    if (act) db.prepare(`UPDATE inventory_activities SET status = 'Approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(act.id);
-
-    const row = db.prepare(`
-      SELECT po.*, s.name AS supplier_name, s.code AS supplier_code,
-        s.contact_person AS supplier_contact, s.email AS supplier_email,
-        w.name AS warehouse_name, w.location AS warehouse_location,
-        (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS item_lines,
-        (SELECT COALESCE(SUM(poi.quantity), 0) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_qty,
-        (SELECT COALESCE(SUM(poi.quantity_received), 0) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_received
-      FROM purchase_orders po
-      JOIN suppliers s ON po.supplier_id = s.id
-      LEFT JOIN warehouses w ON po.warehouse_code = w.code
-      WHERE po.id = ?
-    `).get(id);
-
-    return res.json({ message: 'Purchase order approved successfully', purchaseOrder: buildPO(row) });
-  } catch (err) {
-    console.error('POST /purchase-orders/:id/approve error:', err);
-    return res.status(500).json({ message: 'Failed to approve purchase order' });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// POST /api/purchase-orders/:id/order
-// ═══════════════════════════════════════════════════════════════════════════════
-router.post('/:id/order', authenticateToken, (req, res) => {
-  try {
-    const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ message: 'Purchase order not found' });
-
-    if (existing.status !== 'Approved') {
-      return res.status(400).json({
-        message: `Cannot mark as Ordered: purchase order must be in "Approved" status (current: "${existing.status}")`,
-      });
-    }
-
-    db.prepare(`UPDATE purchase_orders SET status = 'Ordered', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(id);
-
-    const act = db.prepare('SELECT id FROM inventory_activities WHERE reference = ?').get(existing.reference);
-    if (act) db.prepare(`UPDATE inventory_activities SET status = 'Ordered', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(act.id);
-
-    const row = db.prepare(`
-      SELECT po.*, s.name AS supplier_name, s.code AS supplier_code,
-        s.contact_person AS supplier_contact, s.email AS supplier_email,
-        w.name AS warehouse_name, w.location AS warehouse_location,
-        (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS item_lines,
-        (SELECT COALESCE(SUM(poi.quantity), 0) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_qty,
-        (SELECT COALESCE(SUM(poi.quantity_received), 0) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_received
-      FROM purchase_orders po
-      JOIN suppliers s ON po.supplier_id = s.id
-      LEFT JOIN warehouses w ON po.warehouse_code = w.code
-      WHERE po.id = ?
-    `).get(id);
-
-    return res.json({ message: 'Purchase order marked as Ordered', purchaseOrder: buildPO(row) });
-  } catch (err) {
-    console.error('POST /purchase-orders/:id/order error:', err);
-    return res.status(500).json({ message: 'Failed to update purchase order status' });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// POST /api/purchase-orders/:id/receive  – Goods Receiving
-// ═══════════════════════════════════════════════════════════════════════════════
-router.post('/:id/receive', authenticateToken, (req, res) => {
-  try {
-    const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ message: 'Purchase order not found' });
-
-    if (['Draft', 'Waiting', 'Canceled'].includes(existing.status)) {
-      return res.status(400).json({
-        message: `Cannot receive goods for a purchase order in "${existing.status}" status. Order must be Approved or Ordered first.`,
-      });
-    }
-    if (existing.status === 'Received') {
-      return res.status(400).json({
-        message: 'This purchase order is fully received. No further goods can be received.',
-      });
-    }
-
-    const { receiveItems, notes, receivedDate } = req.body;
-
-    if (!Array.isArray(receiveItems) || receiveItems.length === 0) {
-      return res.status(400).json({ message: 'receiveItems must be a non-empty array' });
-    }
-
-    const receiveTx = db.transaction(() => {
-      const year = new Date().getFullYear();
-      const seq  = Math.floor(1000 + Math.random() * 9000);
-      const receiptRef = `POR-${year}-${seq}`;
-      const date = receivedDate || new Date().toISOString().split('T')[0];
-
-      const receiptResult = db.prepare(`
-        INSERT INTO purchase_order_receipts (purchase_order_id, reference, received_date, notes)
-        VALUES (?, ?, ?, ?)
-      `).run(id, receiptRef, date, notes || '');
-
-      const receiptId = receiptResult.lastInsertRowid;
-      let totalUnitsReceived = 0;
-
-      for (const ri of receiveItems) {
-        const poItem = db.prepare(`
-          SELECT poi.*, p.warehouse_code AS product_primary_wh
-          FROM purchase_order_items poi
-          JOIN products p ON poi.product_id = p.id
-          WHERE poi.id = ? AND poi.purchase_order_id = ?
-        `).get(ri.poItemId, id);
-
-        if (!poItem) {
-          throw new Error(`Purchase order item ID ${ri.poItemId} not found on this PO`);
-        }
-
-        const qtyToReceive = Math.floor(Number(ri.quantityReceived));
-        if (!Number.isInteger(qtyToReceive) || qtyToReceive <= 0) {
-          throw new Error(`Receive quantity for item ${ri.poItemId} must be a positive integer`);
-        }
-
-        const remaining = poItem.quantity - poItem.quantity_received;
-        if (qtyToReceive > remaining) {
-          throw new Error(
-            `Cannot receive ${qtyToReceive} units for item ${ri.poItemId}: only ${remaining} remaining to be received`
-          );
-        }
-
-        // Update quantity_received on the PO item
-        db.prepare(`
-          UPDATE purchase_order_items
-          SET quantity_received = quantity_received + ?
-          WHERE id = ?
-        `).run(qtyToReceive, poItem.id);
-
-        // Insert receipt item record
-        db.prepare(`
-          INSERT INTO purchase_order_receipt_items (receipt_id, purchase_order_item_id, product_id, quantity_received)
-          VALUES (?, ?, ?, ?)
-        `).run(receiptId, poItem.id, poItem.product_id, qtyToReceive);
-
-        // Update warehouse stock at destination warehouse
-        const warehouseCode = existing.warehouse_code;
-        const currentWhStock = getWarehouseStock(poItem.product_id, warehouseCode);
-        setWarehouseStock(poItem.product_id, warehouseCode, currentWhStock + qtyToReceive);
-
-        // Update product total quantity
-        db.prepare('UPDATE products SET quantity = quantity + ? WHERE id = ?').run(qtyToReceive, poItem.product_id);
-        syncProductStatus(poItem.product_id);
-
-        totalUnitsReceived += qtyToReceive;
-      }
-
-      // Determine new PO status
-      const newStatus = recalcPOStatus(Number(id));
-
-      // Log in dashboard activities
-      const todayDate = new Date().toISOString().split('T')[0];
-      const supplier = db.prepare('SELECT name FROM suppliers WHERE id = ?').get(existing.supplier_id);
-      db.prepare(`
-        INSERT INTO inventory_activities
-          (reference, type, contact, source_location, dest_location, category, items_count, scheduled_date, status, notes)
-        VALUES (?, 'Receipts', ?, ?, ?, 'Purchase Order Receipt', ?, ?, ?, ?)
-      `).run(
-        receiptRef, supplier ? supplier.name : 'Supplier', 'Supplier',
-        existing.warehouse_code, totalUnitsReceived, todayDate,
-        newStatus || existing.status, notes || ''
-      );
-
-      // Update original activity
-      const act = db.prepare('SELECT id FROM inventory_activities WHERE reference = ?').get(existing.reference);
-      if (act && newStatus) {
-        db.prepare(`UPDATE inventory_activities SET status = ? WHERE id = ?`).run(newStatus, act.id);
-      }
-
-      return receiptId;
-    });
-
-    receiveTx();
-
-    const row = db.prepare(`
-      SELECT po.*, s.name AS supplier_name, s.code AS supplier_code,
-        s.contact_person AS supplier_contact, s.email AS supplier_email,
-        w.name AS warehouse_name, w.location AS warehouse_location,
-        (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS item_lines,
-        (SELECT COALESCE(SUM(poi.quantity), 0) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_qty,
-        (SELECT COALESCE(SUM(poi.quantity_received), 0) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS total_received
-      FROM purchase_orders po
-      JOIN suppliers s ON po.supplier_id = s.id
-      LEFT JOIN warehouses w ON po.warehouse_code = w.code
-      WHERE po.id = ?
-    `).get(id);
-
-    return res.json({
-      message: `Goods received successfully. PO status: ${row.status}`,
-      purchaseOrder: buildPO(row),
-    });
-  } catch (err) {
-    console.error('POST /purchase-orders/:id/receive error:', err);
-    return res.status(500).json({ message: err.message || 'Failed to receive goods' });
   }
 });
 

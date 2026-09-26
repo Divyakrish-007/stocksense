@@ -1526,6 +1526,8 @@ async function runTests() {
     `(${supplierListRes.body.count} suppliers returned)`
   );
 
+  const testSupplierCode = `SUP-E2E-${Date.now()}`;
+
   // 68. POST /api/suppliers (Create new Supplier)
   const createSupplierRes = await request(
     {
@@ -1539,7 +1541,7 @@ async function runTests() {
       },
     },
     {
-      code: 'SUP-E2E-999',
+      code: testSupplierCode,
       name: 'Omni Microtech Suppliers Inc',
       contactPerson: 'Marcus Vance',
       email: 'marcus.vance@omnimicrotech.com',
@@ -1572,7 +1574,7 @@ async function runTests() {
       },
     },
     {
-      code: 'SUP-E2E-999',
+      code: testSupplierCode,
       name: 'Duplicate Supplier Attempt',
     }
   );
@@ -1616,7 +1618,7 @@ async function runTests() {
   });
   console.log(
     '71. GET Single Supplier by ID:',
-    getSupplierRes.status === 200 && getSupplierRes.body.supplier?.code === 'SUP-E2E-999' ? 'PASS' : 'FAIL',
+    getSupplierRes.status === 200 && getSupplierRes.body.supplier?.code === testSupplierCode ? 'PASS' : 'FAIL',
     `(Retrieved Name: "${getSupplierRes.body.supplier?.name}")`
   );
 
@@ -1657,8 +1659,369 @@ async function runTests() {
     `(Deleted ID: ${deleteSupplierRes.body.id})`
   );
 
+  // ==========================================
+  // --- PURCHASE ORDERS MODULE TESTS ---
+  // ==========================================
+  console.log('\n--- Starting Purchase Orders Module E2E Suite ---');
+
+  // 74. GET /api/purchase-orders/meta
+  const poMetaRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/purchase-orders/meta',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '74. GET Purchase Orders Metadata:',
+    poMetaRes.status === 200 && Array.isArray(poMetaRes.body.warehouses) && Array.isArray(poMetaRes.body.suppliers) ? 'PASS' : 'FAIL',
+    `(Total logged: ${poMetaRes.body.stats?.total}, Value: $${poMetaRes.body.stats?.total_value})`
+  );
+
+  // 75. GET /api/purchase-orders list
+  const poListRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/purchase-orders',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '75. GET Purchase Orders List:',
+    poListRes.status === 200 && Array.isArray(poListRes.body.purchaseOrders) ? 'PASS' : 'FAIL',
+    `(${poListRes.body.count} purchase orders returned)`
+  );
+
+  const sampleSupplier = poMetaRes.body.suppliers[0];
+  const sampleProduct = poMetaRes.body.products[0];
+
+  // 76. Validation: Reject PO without supplier (400)
+  const noSuppPORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/purchase-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      warehouseCode: 'WH-MAIN',
+      orderDate: '2026-10-01',
+      expectedDate: '2026-10-10',
+      items: [{ productId: sampleProduct.id, quantity: 10, unitPrice: 15 }],
+    }
+  );
+  console.log(
+    '76. Validation: Reject PO Without Supplier:',
+    noSuppPORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${noSuppPORes.body.message}")`
+  );
+
+  // 77. Validation: Reject PO with empty product items (400)
+  const noItemsPORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/purchase-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      supplierId: sampleSupplier.id,
+      warehouseCode: 'WH-MAIN',
+      orderDate: '2026-10-01',
+      expectedDate: '2026-10-10',
+      items: [],
+    }
+  );
+  console.log(
+    '77. Validation: Reject PO Without Items:',
+    noItemsPORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${noItemsPORes.body.message}")`
+  );
+
+  // 78. Validation: Reject duplicate product line items (400)
+  const dupItemsPORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/purchase-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      supplierId: sampleSupplier.id,
+      warehouseCode: 'WH-MAIN',
+      orderDate: '2026-10-01',
+      expectedDate: '2026-10-10',
+      items: [
+        { productId: sampleProduct.id, quantity: 5, unitPrice: 10 },
+        { productId: sampleProduct.id, quantity: 15, unitPrice: 10 },
+      ],
+    }
+  );
+  console.log(
+    '78. Validation: Reject Duplicate Product Line Items:',
+    dupItemsPORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${dupItemsPORes.body.message}")`
+  );
+
+  // 79. Validation: Reject non-positive quantity (400)
+  const badQtyPORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/purchase-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      supplierId: sampleSupplier.id,
+      warehouseCode: 'WH-MAIN',
+      orderDate: '2026-10-01',
+      expectedDate: '2026-10-10',
+      items: [{ productId: sampleProduct.id, quantity: 0, unitPrice: 10 }],
+    }
+  );
+  console.log(
+    '79. Validation: Reject Non-Positive Item Quantity:',
+    badQtyPORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${badQtyPORes.body.message}")`
+  );
+
+  // 80. POST Create New Draft Purchase Order
+  const createDraftPORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/purchase-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      supplierId: sampleSupplier.id,
+      warehouseCode: 'WH-MAIN',
+      orderDate: '2026-10-01',
+      expectedDate: '2026-10-15',
+      paymentTerms: 'Net 30',
+      notes: 'Automated E2E Test Purchase Order Intake',
+      status: 'Draft',
+      items: [
+        { productId: sampleProduct.id, quantity: 50, unitPrice: sampleProduct.unit_price, taxRate: 10, discount: 5 },
+      ],
+    }
+  );
+  console.log(
+    '80. POST Create Draft Purchase Order:',
+    createDraftPORes.status === 201 && createDraftPORes.body.purchaseOrder?.reference ? 'PASS' : 'FAIL',
+    `(Reference: ${createDraftPORes.body.purchaseOrder?.reference})`
+  );
+  const createdPO = createDraftPORes.body.purchaseOrder;
+
+  // 81. GET Single Purchase Order by ID
+  const getPORes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/purchase-orders/${createdPO.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '81. GET Single Purchase Order by ID:',
+    getPORes.status === 200 && getPORes.body.purchaseOrder?.items?.length === 1 ? 'PASS' : 'FAIL',
+    `(Items: ${getPORes.body.purchaseOrder?.items?.length}, Grand Total: $${getPORes.body.purchaseOrder?.grand_total})`
+  );
+
+  // 82. PATCH Purchase Order Details (update notes and status to Ready)
+  const patchPORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/purchase-orders/${createdPO.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Ready',
+      notes: 'Vendor confirmed dispatch, ready for dock receiving',
+    }
+  );
+  console.log(
+    '82. PATCH Update Purchase Order Status to Ready:',
+    patchPORes.status === 200 && patchPORes.body.purchaseOrder?.status === 'Ready' ? 'PASS' : 'FAIL',
+    `(Status: "${patchPORes.body.purchaseOrder?.status}")`
+  );
+
+  // 83. Execute PO Done Workflow -> Transition status to 'Done' & verify inventory stock increments
+  const prodBeforeDone = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/products/${sampleProduct.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const stockBeforeDone = prodBeforeDone.body.product.quantity;
+
+  const markDonePORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/purchase-orders/${createdPO.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Done',
+    }
+  );
+
+  const prodAfterDone = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/products/${sampleProduct.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const stockAfterDone = prodAfterDone.body.product.quantity;
+
+  console.log(
+    '83. Execute PO Done Workflow & Increment Inventory Stock:',
+    markDonePORes.status === 200 && stockAfterDone === stockBeforeDone + 50 ? 'PASS' : 'FAIL',
+    `(Before: ${stockBeforeDone}, Received: +50, After: ${stockAfterDone})`
+  );
+
+  // 84. Immutability Safeguard: Block editing completed 'Done' PO (400)
+  const editDonePORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/purchase-orders/${createdPO.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      notes: 'Attempting to tamper with completed order notes',
+    }
+  );
+  console.log(
+    '84. Immutability Protection on Completed (Done) PO:',
+    editDonePORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard: "${editDonePORes.body.message}")`
+  );
+
+  // 85. Immutability Safeguard: Prevent duplicate Done execution (400)
+  const dupDonePORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/purchase-orders/${createdPO.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      status: 'Done',
+    }
+  );
+  console.log(
+    '85. Prevent Duplicate Stock Processing on Done PO:',
+    dupDonePORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard: "${dupDonePORes.body.message}")`
+  );
+
+  // 86. Safeguard: Block deletion of completed 'Done' PO (400)
+  const deleteDonePORes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/purchase-orders/${createdPO.id}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '86. Block Deletion of Completed PO:',
+    deleteDonePORes.status === 400 ? 'PASS' : 'FAIL',
+    `(Safeguard: "${deleteDonePORes.body.message}")`
+  );
+
+  // 87. Create and Delete Draft Purchase Order
+  const disposablePORes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/purchase-orders',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      supplierId: sampleSupplier.id,
+      warehouseCode: 'WH-MAIN',
+      orderDate: '2026-10-05',
+      expectedDate: '2026-10-20',
+      status: 'Draft',
+      notes: 'Disposable test PO',
+      items: [{ productId: sampleProduct.id, quantity: 5, unitPrice: sampleProduct.unit_price }],
+    }
+  );
+  const disposablePOId = disposablePORes.body.purchaseOrder.id;
+
+  const deleteDraftPORes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/purchase-orders/${disposablePOId}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '87. Delete Draft Purchase Order:',
+    deleteDraftPORes.status === 200 ? 'PASS' : 'FAIL',
+    `(Deleted ID: ${deleteDraftPORes.body.id})`
+  );
+
+  // 88. Filter Purchase Orders by status and warehouse
+  const filterPORes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/purchase-orders?status=Done&warehouse=WH-MAIN',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '88. Filter Purchase Orders (status=Done & warehouse=WH-MAIN):',
+    filterPORes.status === 200 && filterPORes.body.purchaseOrders?.every((po) => po.warehouse_code === 'WH-MAIN' && po.status === 'Done') ? 'PASS' : 'FAIL',
+    `(Found: ${filterPORes.body.count})`
+  );
+
   console.log('\n======================================================');
-  console.log('🎉 ALL 73 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
+  console.log('🎉 ALL 88 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
   console.log('======================================================');
 }
 

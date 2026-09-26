@@ -236,13 +236,47 @@ function initDatabase() {
       tax_total REAL NOT NULL DEFAULT 0.0,
       discount_total REAL NOT NULL DEFAULT 0.0,
       grand_total REAL NOT NULL DEFAULT 0.0,
-      status TEXT NOT NULL DEFAULT 'Draft' CHECK(status IN ('Draft','Waiting','Approved','Ordered','Partially Received','Received','Canceled')),
+      status TEXT NOT NULL DEFAULT 'Draft',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
       FOREIGN KEY (warehouse_code) REFERENCES warehouses(code) ON DELETE RESTRICT
     );
   `);
+
+  try {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='purchase_orders'").get()?.sql || '';
+    if (tableSql.includes('CHECK(status IN')) {
+      db.exec('PRAGMA foreign_keys=OFF;');
+      db.exec(`
+        CREATE TABLE purchase_orders_temp (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          reference TEXT UNIQUE NOT NULL,
+          supplier_id INTEGER NOT NULL,
+          warehouse_code TEXT NOT NULL,
+          order_date TEXT NOT NULL,
+          expected_date TEXT NOT NULL,
+          payment_terms TEXT NOT NULL DEFAULT 'Net 30',
+          notes TEXT NOT NULL DEFAULT '',
+          subtotal REAL NOT NULL DEFAULT 0.0,
+          tax_total REAL NOT NULL DEFAULT 0.0,
+          discount_total REAL NOT NULL DEFAULT 0.0,
+          grand_total REAL NOT NULL DEFAULT 0.0,
+          status TEXT NOT NULL DEFAULT 'Draft',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT,
+          FOREIGN KEY (warehouse_code) REFERENCES warehouses(code) ON DELETE RESTRICT
+        );
+        INSERT INTO purchase_orders_temp SELECT * FROM purchase_orders;
+        DROP TABLE purchase_orders;
+        ALTER TABLE purchase_orders_temp RENAME TO purchase_orders;
+        PRAGMA foreign_keys=ON;
+      `);
+    }
+  } catch (err) {
+    console.error('PO table migration notice:', err.message);
+  }
 
   // Create Purchase Order Items Table
   db.exec(`
