@@ -15,6 +15,7 @@ const inventoryAdjustmentsRouter = require('./routes/inventoryAdjustments');
 const suppliersRouter = require('./routes/suppliers');
 const purchaseOrdersRouter = require('./routes/purchaseOrders');
 const salesOrdersRouter = require('./routes/salesOrders');
+const customersRouter = require('./routes/customers');
 const reportsRouter = require('./routes/reports');
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/inventory-adjustments', inventoryAdjustmentsRouter);
 app.use('/api/suppliers', suppliersRouter);
 app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/sales-orders', salesOrdersRouter);
+app.use('/api/customers', customersRouter);
 app.use('/api/reports', reportsRouter);
 
 // Health check endpoint
