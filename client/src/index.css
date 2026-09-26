@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: #0f172a;
+    background-color: #f8fafc;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Form validation styling following modern web guidance */
+  input:user-invalid,
+  select:user-invalid,
+  textarea:user-invalid {
+    border-color: #ef4444 !important;
+    background-color: #fef2f2 !important;
+  }
+
+  input:user-invalid:focus,
+  select:user-invalid:focus,
+  textarea:user-invalid:focus {
+    outline-color: #ef4444 !important;
+    ring-color: #fca5a5 !important;
+  }
+}
+
+/* Custom sleek scrollbars for data tables and sidebars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

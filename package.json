@@ -1,0 +1,36 @@
+{
+  "name": "stocksense",
+  "version": "1.0.0",
+  "description": "StockSense - Modular Inventory Management System",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "start:server": "node server/index.js",
+    "dev:server": "nodemon server/index.js",
+    "dev:client": "npm run dev --prefix client",
+    "build:client": "npm run build --prefix client",
+    "dev": "concurrently -k -n \"API,CLIENT\" -c \"cyan,magenta\" \"npm run start:server\" \"npm run dev:client\"",
+    "build": "npm run build:client"
+  },
+  "keywords": [
+    "inventory-management",
+    "warehouse",
+    "stocksense",
+    "real-time"
+  ],
+  "author": "StockSense Team",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "nodemon": "^3.1.14"
+  }
+}
