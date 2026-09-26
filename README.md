@@ -100,6 +100,7 @@ npm run dev
 
 ### Running the Automated E2E Test Suite:
 ```bash
-node scratch/test_api.js
+node test_api.js
 ```
 Verifies all 15 authentication, database, filtering, and CRUD scenarios.
+
