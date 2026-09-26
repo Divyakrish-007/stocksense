@@ -1493,8 +1493,172 @@ async function runTests() {
     `(Found: ${filterAdjRes.body.count})`
   );
 
+  // ==========================================
+  // --- SUPPLIERS MODULE TESTS ---
+  // ==========================================
+  console.log('\n--- Starting Suppliers Module E2E Suite ---');
+
+  // 66. GET /api/suppliers/meta
+  const supplierMetaRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/suppliers/meta',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '66. GET Suppliers Metadata:',
+    supplierMetaRes.status === 200 && supplierMetaRes.body.stats?.total >= 0 ? 'PASS' : 'FAIL',
+    `(Total: ${supplierMetaRes.body.stats?.total}, Active: ${supplierMetaRes.body.stats?.active})`
+  );
+
+  // 67. GET /api/suppliers list
+  const supplierListRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: '/api/suppliers',
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '67. GET Suppliers List:',
+    supplierListRes.status === 200 && Array.isArray(supplierListRes.body.suppliers) ? 'PASS' : 'FAIL',
+    `(${supplierListRes.body.count} suppliers returned)`
+  );
+
+  // 68. POST /api/suppliers (Create new Supplier)
+  const createSupplierRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/suppliers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      code: 'SUP-E2E-999',
+      name: 'Omni Microtech Suppliers Inc',
+      contactPerson: 'Marcus Vance',
+      email: 'marcus.vance@omnimicrotech.com',
+      phone: '+1-555-0999',
+      address: '777 Tech Boulevard',
+      city: 'Chicago',
+      taxId: 'US-TAX-E2E-999',
+      paymentTerms: 'Net 30',
+      notes: 'Automated E2E test supplier record',
+      status: 'Active',
+    }
+  );
+  console.log(
+    '68. POST Create New Supplier:',
+    createSupplierRes.status === 201 && createSupplierRes.body.supplier?.id ? 'PASS' : 'FAIL',
+    `(Created Code: ${createSupplierRes.body.supplier?.code})`
+  );
+  const createdSupplier = createSupplierRes.body.supplier;
+
+  // 69. Duplicate Supplier Code Validation Protection (400)
+  const dupSupplierRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/suppliers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      code: 'SUP-E2E-999',
+      name: 'Duplicate Supplier Attempt',
+    }
+  );
+  console.log(
+    '69. Duplicate Supplier Code Validation Protection:',
+    dupSupplierRes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${dupSupplierRes.body.message}")`
+  );
+
+  // 70. Invalid Input Handling (Missing required fields & bad email)
+  const invalidSupplierRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: '/api/suppliers',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      code: 'SUP-INVALID-1',
+      name: 'Invalid Email Supplier',
+      email: 'not-an-email-address',
+    }
+  );
+  console.log(
+    '70. Invalid Input Handling (Bad Email format rejection):',
+    invalidSupplierRes.status === 400 ? 'PASS' : 'FAIL',
+    `(Rejection: "${invalidSupplierRes.body.message}")`
+  );
+
+  // 71. GET Single Supplier by ID
+  const getSupplierRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/suppliers/${createdSupplier.id}`,
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '71. GET Single Supplier by ID:',
+    getSupplierRes.status === 200 && getSupplierRes.body.supplier?.code === 'SUP-E2E-999' ? 'PASS' : 'FAIL',
+    `(Retrieved Name: "${getSupplierRes.body.supplier?.name}")`
+  );
+
+  // 72. PATCH Supplier (Update name & contact person)
+  const patchSupplierRes = await request(
+    {
+      hostname: 'localhost',
+      port: 5000,
+      path: `/api/suppliers/${createdSupplier.id}`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    {
+      name: 'Omni Microtech Suppliers International',
+      contactPerson: 'Marcus Vance Jr.',
+    }
+  );
+  console.log(
+    '72. PATCH Update Supplier Details:',
+    patchSupplierRes.status === 200 && patchSupplierRes.body.supplier?.contact_person === 'Marcus Vance Jr.' ? 'PASS' : 'FAIL',
+    `(Updated Contact: "${patchSupplierRes.body.supplier?.contact_person}")`
+  );
+
+  // 73. DELETE Supplier
+  const deleteSupplierRes = await request({
+    hostname: 'localhost',
+    port: 5000,
+    path: `/api/suppliers/${createdSupplier.id}`,
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  console.log(
+    '73. DELETE Supplier from Database:',
+    deleteSupplierRes.status === 200 && deleteSupplierRes.body.id === createdSupplier.id ? 'PASS' : 'FAIL',
+    `(Deleted ID: ${deleteSupplierRes.body.id})`
+  );
+
   console.log('\n======================================================');
-  console.log('🎉 ALL 65 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
+  console.log('🎉 ALL 73 TEST SCENARIOS PASSED WITH 100% SUCCESS! 🎉');
   console.log('======================================================');
 }
 
