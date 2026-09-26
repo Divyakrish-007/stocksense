@@ -18,7 +18,6 @@ import {
   Mail,
   MapPin,
   X,
-  Building,
 } from 'lucide-react';
 
 export const CustomersPage: React.FC = () => {
